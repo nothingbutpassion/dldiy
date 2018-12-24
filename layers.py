@@ -5,9 +5,9 @@ class ReLU:
         self.mask = None
 
     def forward(self, x):
-        self.mask = x < 0;
-        y = x.copy();
-        y[self.mask] = 0;
+        self.mask = x < 0
+        y = x.copy()
+        y[self.mask] = 0
         return y
 
     def backward(self, dy):
@@ -55,16 +55,28 @@ class Affine:
         dx = dx.reshape(*self.x_shape)
         return dx
 
-class SoftMax:
-    def __init__(self)
-        pass
+class Softmax:
+    def __init__(self):
+        self.y = None
         
     def forward(self, x):
-        max_x = np.max(x)
-        exp_x = np.exp(x-max_x)
-        y = exp_x/np.sum(exp_x)
-        return y
+        if x.ndim == 2:
+            x = x.T
+            x = x - np.max(x, axis=0)
+            exp_x = np.exp(x)
+            y = exp_x/np.sum(exp_x, axis=0)
+            self.y = y.T
+        else:
+            x = x - np.max(x)
+            exp_x = np.exp(x)
+            self.y = exp_x/np.sum(exp_x)
+        return self.y
         
     def backward(self, dy):
-        
-        pass
+        if dy.ndim == 2: 
+            ds = np.sum((self.y * dy).T, axis=0)
+            dx = self.y * (dy.T - ds).T
+        else:
+            ds = np.sum(self.y * dy)
+            dx = self.y * (dy - ds)
+        return dx
