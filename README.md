@@ -1,1 +1,1 @@
-# dldiy
+# Deep learning, Do It Yourself!
