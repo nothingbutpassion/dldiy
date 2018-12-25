@@ -1,9 +1,15 @@
 # coding: utf-8
 import os
-import urllib2
 import gzip
 import pickle
 import numpy as np
+
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen
+except ImportError:
+    # Fall back to Python 2's urllib2
+    from urllib2 import urlopen
 
 urls = {
     'train_image': 'http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz',
@@ -44,7 +50,7 @@ def _download():
         if not os.path.exists(local_file):
             print('download ' + k + ' from ' + v)
             with open(local_file,'wb') as f:
-                f.write(urllib2.urlopen(v).read())
+                f.write(urlopen(v).read())
                 f.close()
             print('saved as ' + local_file)
 
@@ -64,7 +70,7 @@ def init_data():
     _download()
     _convert()
 
-def load_data(normalize=True, flatten=True, one_hot_label=False):
+def load_data(normalize=True, flatten=True, one_hot_label=True):
     '''MNIST: http://yann.lecun.com/exdb/mnist/'''
     
     if not os.path.exists(save_file):

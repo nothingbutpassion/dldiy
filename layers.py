@@ -2,6 +2,7 @@ import numpy as np
 
 class ReLU:
     def __init__(self):
+        self.name = 'relu'
         self.mask = None
 
     def forward(self, x):
@@ -17,6 +18,7 @@ class ReLU:
 
 class Sigmoid:
     def __init__(self):
+        self.name = 'sigmoid'
         self.y = None
 
     def forward(self, x):
@@ -30,6 +32,7 @@ class Sigmoid:
 
 class Affine:
     def __init__(self, W, b):
+        self.name = 'affine'
         self.W = W
         self.b = b
         self.x = None
@@ -57,6 +60,7 @@ class Affine:
 
 class Softmax:
     def __init__(self):
+        self.name = 'softmax'
         self.y = None
         
     def forward(self, x):
