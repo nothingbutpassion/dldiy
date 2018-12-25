@@ -44,18 +44,20 @@ class FooNet:
         print('loss: ' + str(l))
         
         g = self.L.grad(batch_y, x)
-        for k in reversed(self.layers.keys()):
+        keys = list(self.layers.keys())
+        keys.reverse()
+        for k in keys:
             g = self.layers[k].backward(g)
 
         for k,v in self.layers.items():
             if self.layers[k].name == 'affine':
-                self.grads['dW' + str(k)] = self.layers[k].dW
-                self.grads['db' + str(k)] = self.layers[k].db
+                self.grads['W' + str(k)] = self.layers[k].dW
+                self.grads['b' + str(k)] = self.layers[k].db
 
         self.optimizer.update(self.params, self.grads)
 
     def train(self, train_x, train_y, batch_size):
-        steps = train_x.shape[0]/batch_size
+        steps = train_x.shape[0]//batch_size
         for i in range(steps):
             batch_x = train_x[i*batch_size:(i+1)*batch_size]
             batch_y = train_y[i*batch_size:(i+1)*batch_size]

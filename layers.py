@@ -41,6 +41,7 @@ class Affine:
         self.db = None
 
     def forward(self, x):
+        self.x = x
         self.x_shape = x.shape
         if x.ndim == 1:
             self.x = x.reshape(1, -1)          
