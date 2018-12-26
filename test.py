@@ -14,7 +14,7 @@ def test_foonet():
     train_x = train_x[:50000]
     train_y = train_y[:50000]
     batch_size = 200
-    net = networks.FooNet(initializers.he_normal)
+    net = networks.FooNet()
     net.add(layers.Affine(), (None, 28), input_shape=(None, train_x.shape[1]))  
     net.add(layers.ReLU(), (None, 28))
     net.add(layers.Affine(), (None, 10))
@@ -22,11 +22,14 @@ def test_foonet():
     net.add(layers.Affine(), (None, 10)) 
     net.add(layers.Softmax(), (None, 10))
     net.summary()
-    net.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001))
+    net.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001), initializers.he_normal)
     history = net.train(train_x, train_y, batch_size, epochs=32)
-    x = range(len(history['loss']))
-    plt.plot(x, history['loss'])
-    plt.plot(x, history['acc'])
+    epochs = range(1, len(history["loss"])+1)
+    plt.plot(epochs, history["loss"], label="Traning loss")
+    plt.plot(epochs, history["acc"], label="Traning accuracy")
+    plt.title('Training loss and accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss & Accuracy')
     plt.show(block=True)
 
 if __name__ == "__main__":

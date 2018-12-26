@@ -2,7 +2,7 @@ import numpy as np
 
 
 class FooNet:
-    def __init__(self, initalizer):
+    def __init__(self):
         self.layers = {}
         self.input_shapes = {}
         self.output_shapes = {}
@@ -10,7 +10,7 @@ class FooNet:
         self.grads = {}
         self.loss_func = None
         self.optimizer = None
-        self.initalizer = initalizer
+        self.initalizer = None
 
     def add(self, layer, output_shape, input_shape=None):
         i = len(self.layers)
@@ -19,11 +19,6 @@ class FooNet:
         self.input_shapes[i] = input_shape
         if self.input_shapes[i] is None:
             self.input_shapes[i] = self.output_shapes[i-1]
-        if self.layers[i].name == "affine":
-            fan_in = self.input_shapes[i][-1]
-            fan_out = self.output_shapes[i][-1]
-            self.layers[i].W = self.initalizer((fan_in, fan_out))
-            self.layers[i].b = self.initalizer((fan_out,))
 
     def summary(self):
         print("%s" % "-"*60)
@@ -33,11 +28,16 @@ class FooNet:
             print("%-20s%-20s%-20s" % (str(k)+" ("+ v.name +")" , str(self.input_shapes[k]), str(self.output_shapes[k])))
         print("%s" % "-"*60)
 
-    def compile(self, loss_func, optimizer):
+    def compile(self, loss_func, optimizer, initalizer):
         self.loss_func = loss_func
         self.optimizer = optimizer
-        for k,v in self.layers.items():
+        self.initalizer = initalizer
+        for k in self.layers.keys():
             if self.layers[k].name == "affine":
+                fan_in = self.input_shapes[k][-1]
+                fan_out = self.output_shapes[k][-1]
+                self.layers[k].W = self.initalizer((fan_in, fan_out))
+                self.layers[k].b = self.initalizer((fan_out,))
                 self.params["W" + str(k)] = self.layers[k].W
                 self.params["b" + str(k)] = self.layers[k].b
 
@@ -46,18 +46,6 @@ class FooNet:
         x = batch_x
         for v in self.layers.values():
             x = v.forward(x)
-
-        # # caculate loss 
-        # loss = self.loss.loss(batch_y, x)
-        # print("loss: " + str(loss))
-        # if not history["loss"] is None:
-        #     history["loss"].append(loss)
-
-        # # caculate accuracy
-        # acc = self.accuracy(batch_x, batch_y)
-        # print("acc: " + str(acc))
-        # if not history["acc"] is None:
-        #     history["acc"].append(acc) 
 
         # backward propagation
         keys = list(self.layers.keys())
