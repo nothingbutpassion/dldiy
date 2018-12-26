@@ -1,7 +1,7 @@
 import numpy as np
 
 class SGD:
-    '''Stochastic Gradient Descent'''
+    """Stochastic Gradient Descent"""
     
     def __init__(self, lr=0.01):
         self.lr = lr
@@ -11,7 +11,7 @@ class SGD:
             params[k] -= self.lr * grads[k]
 
 class Momentum:
-    ''' SGD with Momentum: https://blog.paperspace.com/intro-to-optimization-momentum-rmsprop-adam/'''
+    """ SGD with Momentum: https://blog.paperspace.com/intro-to-optimization-momentum-rmsprop-adam/"""
 
     def __init__(self, lr=0.01, momentum=0.9):
         self.lr = lr
@@ -30,11 +30,11 @@ class Momentum:
 
 
 class RMSProp:
-    '''Root Mean Square Propogation: https://blog.paperspace.com/intro-to-optimization-momentum-rmsprop-adam/
+    """Root Mean Square Propogation: https://blog.paperspace.com/intro-to-optimization-momentum-rmsprop-adam/
 
     It is recommended to leave the parameters of this optimizer at their default values (except the learning rate).
     This optimizer is usually a good choice for recurrent neural networks
-    '''
+    """
 
     def __init__(self, lr=0.01, oth=0.9):
         self.lr = lr

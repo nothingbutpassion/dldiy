@@ -21,20 +21,20 @@ class FooNet:
             self.input_shapes[idx] = input_shape
 
     def summary(self):
-        print('FooNet info:')
+        print("FooNet summary:")
         for k,v in self.layers.items():
-            print('layer=' + str(k)  + ' name=' + v.name 
-                + ' input_shape=' + str(self.input_shapes[k])
-                + ' output_shape=' + str(self.output_shapes[k]))
+            print("layer=" + str(k)  + " name=" + v.name 
+                + " input_shape=" + str(self.input_shapes[k])
+                + " output_shape=" + str(self.output_shapes[k]))
 
 
     def compile(self, loss, optimizer):
         self.L = loss
         self.optimizer = optimizer
         for k,v in self.layers.items():
-            if self.layers[k].name == 'affine':
-                self.params['W' + str(k)] = self.layers[k].W
-                self.params['b' + str(k)] = self.layers[k].b
+            if self.layers[k].name == "affine":
+                self.params["W" + str(k)] = self.layers[k].W
+                self.params["b" + str(k)] = self.layers[k].b
 
     def train_one_batch(self, batch_x, batch_y, loss_list=None, acc_list=None):
         x = batch_x
@@ -42,12 +42,12 @@ class FooNet:
             x = v.forward(x)
 
         l = self.L.loss(batch_y, x)
-        print('loss: ' + str(l))
+        print("loss: " + str(l))
         if not loss_list is None:
             loss_list.append(l)
 
         acc = self.accuracy(batch_x, batch_y)
-        print('acc: ' + str(acc))
+        print("acc: " + str(acc))
         if not acc_list is None:
             acc_list.append(acc) 
 
@@ -58,9 +58,9 @@ class FooNet:
             g = self.layers[k].backward(g)
 
         for k,v in self.layers.items():
-            if self.layers[k].name == 'affine':
-                self.grads['W' + str(k)] = self.layers[k].dW
-                self.grads['b' + str(k)] = self.layers[k].db
+            if self.layers[k].name == "affine":
+                self.grads["W" + str(k)] = self.layers[k].dW
+                self.grads["b" + str(k)] = self.layers[k].db
 
         self.optimizer.update(self.params, self.grads)
 

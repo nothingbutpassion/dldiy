@@ -6,7 +6,7 @@ import losses
 import optimizers
 import network
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     (train_x, train_y), (test_x, test_y) = mnist.load_data()
     batch_size=200
     batch_x=train_x[:batch_size]
@@ -29,5 +29,5 @@ if __name__ == '__main__':
     x = range(len(loss_list))
     plt.plot(x, loss_list)
     plt.plot(x, acc_list)
-    plt.show()
+    plt.show(block=True)
     
