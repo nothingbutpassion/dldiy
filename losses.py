@@ -26,8 +26,8 @@ class CrossEntropy:
         return categorical_crossentropy(y_true, y_pred)
 
     def grad(self, y_true, y_pred):
-        epsilon = 1e-3
-        return y_true/(y_pred + epsilon)
+        epsilon = 1e-7
+        return -y_true/(y_pred + epsilon)
         
     
 
