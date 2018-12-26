@@ -29,7 +29,8 @@ def test_foonet():
     plt.plot(epochs, history["acc"], label="Traning accuracy")
     plt.title('Training loss and accuracy')
     plt.xlabel('Epochs')
-    plt.ylabel('Loss & Accuracy')
+    plt.ylabel('Loss/Accuracy')
+    plt.legend()
     plt.show(block=True)
 
 if __name__ == "__main__":

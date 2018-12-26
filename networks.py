@@ -25,7 +25,7 @@ class FooNet:
         print("%-20s%-20s%-20s" % ('Layer (Name)','Input Shape','Output Shape'))
         print("%s" % "-"*60)
         for k,v in self.layers.items():
-            print("%-20s%-20s%-20s" % (str(k)+" ("+ v.name +")" , str(self.input_shapes[k]), str(self.output_shapes[k])))
+            print("%-20s%-20s%-20s" % (str(k+1)+" ("+ v.name +")" , str(self.input_shapes[k]), str(self.output_shapes[k])))
         print("%s" % "-"*60)
 
     def compile(self, loss_func, optimizer, initalizer):
@@ -85,7 +85,7 @@ class FooNet:
             if not history["acc"] is None:
                 history["acc"].append(acc) 
             
-            print("== epochs: " + str(j) + " loss: " + str(loss) + " acc: " + str(acc))
+            print("epochs: %-4s loss: %-20s acc: %-20s" % (str(j+1), str(loss), str(acc)))
         
         return history
     
