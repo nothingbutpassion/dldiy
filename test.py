@@ -9,29 +9,25 @@ import networks
 
 def test_foonet():
     (train_x, train_y), (test_x, test_y) = mnist.load_data()
-    batch_size=200
-    batch_x=train_x[:batch_size]
-    batch_y=train_y[:batch_size]
-
-    scale = 0.01
-    W1 = scale*np.random.rand(batch_x.shape[1], 100)
-    b1 = scale*np.random.rand(100)
-    W2 = scale*np.random.rand(100, 10)
-    b2 = scale*np.random.rand(10)
-
-    net = networks.FooNet()
-    net.add(layers.Affine(W1, b1), (batch_size, 100), input_shape=batch_x.shape)  
-    net.add(layers.ReLU(), (batch_size, 100))
-    net.add(layers.Affine(W2, b2), (batch_size, 10)) 
-    net.add(layers.Softmax(), (batch_size, 10))
+    val_x = train_x[50000:]
+    val_y = train_y[50000:]
+    train_x = train_x[:50000]
+    train_y = train_y[:50000]
+    batch_size = 200
+    net = networks.FooNet(initializers.he_normal)
+    net.add(layers.Affine(), (None, 28), input_shape=(None, train_x.shape[1]))  
+    net.add(layers.ReLU(), (None, 28))
+    net.add(layers.Affine(), (None, 10))
+    net.add(layers.ReLU(), (None, 10))
+    net.add(layers.Affine(), (None, 10)) 
+    net.add(layers.Softmax(), (None, 10))
     net.summary()
     net.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001))
-    loss_list, acc_list = net.train(train_x, train_y, batch_size)
-    x = range(len(loss_list))
-    plt.plot(x, loss_list)
-    plt.plot(x, acc_list)
+    history = net.train(train_x, train_y, batch_size, epochs=32)
+    x = range(len(history['loss']))
+    plt.plot(x, history['loss'])
+    plt.plot(x, history['acc'])
     plt.show(block=True)
 
 if __name__ == "__main__":
-    x = initializers.he_normal((4,5))
-    print(str(x.shape))
+    test_foonet()

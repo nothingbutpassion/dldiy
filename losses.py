@@ -21,10 +21,8 @@ class MSE:
 
 
 class CrossEntropy:
-
     def loss(self, y_true, y_pred):
         return categorical_crossentropy(y_true, y_pred)
-
     def grad(self, y_true, y_pred):
         epsilon = 1e-7
         return -y_true/(y_pred + epsilon)

@@ -31,7 +31,7 @@ class Sigmoid:
 
 
 class Affine:
-    def __init__(self, W, b):
+    def __init__(self, W=None, b=None):
         self.name = "affine"
         self.W = W
         self.b = b
