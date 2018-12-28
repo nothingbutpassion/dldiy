@@ -61,8 +61,8 @@ class FooNet:
                 self.grads["b" + str(k)] = self.layers[k].db
         self.optimizer.update(self.params, self.grads)
 
-    def train(self, train_x, train_y, batch_size, epochs=1):
-        history = {"acc": [], "loss": [] }
+    def train(self, train_x, train_y, batch_size, epochs=1, val_x=None, val_y=None):
+        history = {"acc": [], "loss": [], "val_acc": [], "val_loss": [] }
         steps = train_x.shape[0]//batch_size
         for j in range(epochs):
             for i in range(steps):
@@ -73,17 +73,21 @@ class FooNet:
             # predict all train samples
             y_pred = self.predict(train_x)
 
-            # caculate loss
+            # caculate training loss
             loss = self.loss_func.loss(train_y, y_pred)
-            if not history["loss"] is None:
-                history["loss"].append(loss)
+            history["loss"].append(loss)
 
-            # caculate accuracy
-            y_pred = np.argmax(y_pred, axis=1)
-            y_true = np.argmax(train_y, axis=1)
-            acc = np.sum(y_pred == y_true) / float(train_x.shape[0])
-            if not history["acc"] is None:
-                history["acc"].append(acc) 
+            # caculate training accuracy
+            acc = self.loss_func.accuracy(train_y, y_pred)
+            history["acc"].append(acc)
+
+            # caculate validating loss & accuracy
+            if not val_x is None and not val_y is None:
+                y_pred = self.predict(val_x)
+                val_loss = self.loss_func.loss(val_y, y_pred)
+                val_acc = self.loss_func.accuracy(val_y, y_pred)
+                history["val_loss"].append(val_loss)
+                history["val_acc"].append(val_acc)
             
             print("epochs: %-4s loss: %-20s acc: %-20s" % (str(j+1), str(loss), str(acc)))
         
@@ -93,6 +97,16 @@ class FooNet:
         for v in self.layers.values():
             x = v.forward(x)
         return x
+
+    def evaluate(self, x, y_true, metrics=["loss", "acc"]):
+        result = {}
+        if not metrics is None:
+            y_pred = self.predict(x)
+            if "loss" in metrics:
+                result["loss"] = self.loss_func.loss(y_true, y_pred)
+            if "acc" in metrics:
+                result["acc"] = self.loss_func.accuracy(y_true, y_pred)
+            return result
     
     def loss(self, x, y_true):
         y_pred = self.predict(x)
@@ -100,8 +114,6 @@ class FooNet:
 
     def accuracy(self, x, y_true):
         y_pred = self.predict(x)
-        y_pred = np.argmax(y_pred, axis=1)
-        y_true = np.argmax(y_true, axis=1)
-        return np.sum(y_pred == y_true) / float(x.shape[0])
+        return self.loss_func.accuracy(y_true, y_pred)
 
             
