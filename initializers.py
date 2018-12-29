@@ -1,8 +1,5 @@
 import numpy as np
 
-
-
-
 def _he_normal(shape):
     """ He kaiming normal initalizer
 

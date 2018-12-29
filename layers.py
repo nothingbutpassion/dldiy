@@ -1,4 +1,5 @@
 import numpy as np
+from utils import im2col, col2im
 
 class ReLU:
     def __init__(self):
@@ -85,3 +86,69 @@ class Softmax:
             ds = np.sum(self.y * dy)
             dx = self.y * (dy - ds)
         return dx
+
+class Cov2D:
+    def __init_(self, filter_w, filter_h, stride=1, pad=0, W=None, b=None):
+        self.name = "cov2d"
+        self.FW = filter_w
+        self.FH = filter_h
+        self.stride = stride
+        self.pad = pad
+        self.W = W
+        self.b = b
+        self.dW = None
+        self.db = None
+
+    def forward(self, x):
+        N, C, H, W = x.shape
+        OH = (H + 2*self.pad - self.FH)//self.stride + 1
+        OW = (W + 2*self.pad - self.FW)//self.stride + 1
+        col = im2col(x, self.FH, self.FW, self.stride, self.pad)
+        
+        # NOTES:
+        # W.shape: (C*FH*FW, FN)
+        # b.shape: (FN,)
+        # col.shape: (N*OH*OW, C*FH*FW)
+        # y.shape: (N*OH*OW, FN)
+        # after reshape: (N, OH, OW, FN)
+        # after transpose(N, FN, OH, OW)
+        # FN (filter nums) == OC (output channels)
+        y = np.dot(col, self.W) + self.b
+        y = y.reshape(N, OH, OW, -1).transpose(0, 3, 1, 2)
+
+        # save for backward
+        self.x = x
+
+
+        return y
+
+    def backward(self, dy):
+
+        
+        # dy.shape: (N, FN, OH, OW)
+        # after transpose: (N, OH, OW, FN)
+        # after reshape: (N*OH*OW, FN)
+        N, FN, OH, OW = dy.shape
+        dy=dy.transpose(0, 2, 3, 1).reshape(-1, FN)
+
+
+        #self.x shape: 
+        #dx.shape: N, C, H, W
+        #dw.shape: (C*FH*FW, FN)
+        return dy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def backward(self, dy):
+        pass
