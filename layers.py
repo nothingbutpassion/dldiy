@@ -88,7 +88,7 @@ class Softmax:
         return dx
 
 class Cov2D:
-    def __init_(self, filter_w, filter_h, stride=1, pad=0, W=None, b=None):
+    def __init__(self, filter_w, filter_h, stride=1, pad=0, W=None, b=None):
         self.name = "cov2d"
         self.FW = filter_w
         self.FH = filter_h
@@ -98,6 +98,8 @@ class Cov2D:
         self.b = b
         self.dW = None
         self.db = None
+        self.x = None
+        self.col = None
 
     def forward(self, x):
         N, C, H, W = x.shape
@@ -105,8 +107,8 @@ class Cov2D:
         OW = (W + 2*self.pad - self.FW)//self.stride + 1
         col = im2col(x, self.FH, self.FW, self.stride, self.pad)
         
-        # NOTES:
-        # W.shape: (C*FH*FW, FN)
+        # NOTES
+        # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
         # b.shape: (FN,)
         # col.shape: (N*OH*OW, C*FH*FW)
         # y.shape: (N*OH*OW, FN)
@@ -118,37 +120,93 @@ class Cov2D:
 
         # save for backward
         self.x = x
-
+        self.col = col
 
         return y
 
     def backward(self, dy):
-
-        
         # dy.shape: (N, FN, OH, OW)
         # after transpose: (N, OH, OW, FN)
         # after reshape: (N*OH*OW, FN)
         N, FN, OH, OW = dy.shape
         dy=dy.transpose(0, 2, 3, 1).reshape(-1, FN)
+        
+        # y = x.w + b => dy/dx = w, dy/dw = x, dy/db = 1
+        # dy.shape:                     (N*OH*OW, FN)
+        # dcol.shape(same as col.shape):(N*OH*OW, C*FH*FW)
+        # dw.shape(same as W.shape):    (C*FH*FW, FN)
+        # db.shape(same as b.shape):    (FN,)
+        # dx.shape(same as x.shape):    (N, C, H, W)
+        self.dW = np.dot(self.col.T, dy)
+        self.db = np.sum(dy, axis=0)
+        dcol = np.dot(dy, self.W.T)
+        dx = col2im(dcol, self.x.shape, self.FH, self.FW, self.stride, self.pad)
+        return dx
 
+class MaxPooling:
+    def __init__(self, pool_h, pool_w, stride=1, pad=0):
+        self.name = 'maxpooling'
+        self.pool_h = pool_h
+        self.pool_w = pool_w
+        self.stride = stride
+        self.pad = pad
+        self.x = None
+        self.argmax = None
 
-        #self.x shape: 
-        #dx.shape: N, C, H, W
-        #dw.shape: (C*FH*FW, FN)
-        return dy
+    def forward(self, x):
+        N, C, H, W = x.shape
+        out_h = (H - self.pool_h)//self.stride + 1
+        out_w = (W - self.pool_w)//self.stride + 1
 
+        # col.shape: (N*out_h*out_w, C*pool_h*pool_w)
+        # after reshape: (N*out_h*out_w*C, pool_h*pool_w)
+        col = im2col(x, self.pool_h, self.pool_w, self.stride, self.pad)
+        col = col.reshape(-1, self.pool_h*self.pool_w)
+        
+        # save for backward
+        self.x = x
+        self.argmax = np.argmax(col, axis=1)
 
-
-
-
-
-
-
-
-
-
-
-
+        # col.shape: (N*out_h*out_w*C, pool_h*pool_w)
+        # after np.max: (N*out_h*out_w*C,)
+        # after reshape: (N, out_h, out_w, C)
+        # after transpose: (N, C, out_h, out_W)
+        # so y.shape: (N, C, out_h, out_w)
+        col = np.max(col, axis=1)
+        y = col.reshape(N, out_h, out_w, C).transpose(0, 3, 1, 2)
+        return y
 
     def backward(self, dy):
-        pass
+        N, C, out_h, out_w = dy.shape
+
+        # dy.shape: (N, C, out_h, out_w)
+        # after transpose: (N, out_h, out_w, C)
+        dy = dy.transpose(0, 2, 3, 1)
+
+        # col.shape: (N*out_h*out_w*C, pool_h*pool_w)
+        # after reshape: (N*out_h*out_w, C*pool_h*pool_w)
+        col = np.zeros((N*out_h*out_w*C, self.pool_h*self.pool_w))
+        col[np.arange(N*out_h*out_w*C), self.argmax.flatten()] = dy.flatten()
+        col = col.reshape(N*out_h*out_w, -1)
+
+        # col.shape: (N*out_h*out_w, C*pool_h*pool_w) => dx.shape (N, C, H, W)
+        dx = col2im(col, self.x.shape, self.pool_h, self.pool_w, self.stride, self.pad)
+        return dx
+
+class Flatten:
+    def __init__(self):
+        self.name = 'flatten'
+        self.x = None
+
+    def forward(self, x):
+        self.x = x
+        if x.ndim == 1:
+            return x
+        y = x.reshape(x.shape[0], -1)
+        return y
+
+    def backward(self, dy):
+        dx = dy.reshape(self.x.shape)
+        return dx
+
+

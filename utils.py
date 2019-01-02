@@ -39,7 +39,8 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
         for x in range(filter_w):
             x_max = x + stride * out_w
             img[:, :, y:y_max:stride, x:x_max:stride] = col[:, :, y, x, :, :]
-    return img[:, :, pad:pad+H + pad, pad:pad+W]
+    # final img.shape: (N, C, H, W)
+    return img[:, :, pad:pad+H, pad:pad+W]
 
 
 
