@@ -1,6 +1,15 @@
 import numpy as np
 
 
+def _print_progress(epoch, total_steps, current_step):
+    import sys
+    len = 40
+    pos = round(float(len)*current_step/total_steps)
+    progress = "="*pos + "-"*(len-pos)
+    sys.stdout.write("Epoch: %-4s %-6s [%s]\r" % (epoch, str(current_step)+"/"+str(total_steps), progress))
+    sys.stdout.flush()
+
+
 class BaseNet:
     def __init__(self):
         self.layers = {}
@@ -69,7 +78,8 @@ class BaseNet:
                 batch_x = train_x[i*batch_size:(i+1)*batch_size]
                 batch_y = train_y[i*batch_size:(i+1)*batch_size]
                 self.train_one_batch(batch_x, batch_y)
-                #print("epochs: %-4s steps: %-20s" % (str(j+1), str(i)))
+                #print("Epoch: %-4s step: %-20s" % (str(j+1), str(i+1)+"/"+str(steps)), end="\r")
+                _print_progress(j+1, steps, i+1)
 
             # predict all train samples
             train_sample_x = train_x[:1000]
@@ -92,7 +102,7 @@ class BaseNet:
                 history["val_loss"].append(val_loss)
                 history["val_acc"].append(val_acc)
             
-            print("epochs: %-4s loss: %-20s acc: %-20s" % (str(j+1), str(loss), str(acc)))
+            print("Epoch: %-4s loss: %-20s acc: %-20s" % (str(j+1), str(loss), str(acc)))
         
         return history
     
