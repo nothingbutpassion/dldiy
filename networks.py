@@ -4,13 +4,13 @@ import numpy as np
 def _print_progress(epoch, total_steps, current_step):
     import sys
     len = 40
-    pos = round(float(len)*current_step/total_steps)
+    pos = int(round(float(len)*current_step/total_steps))
     progress = "="*pos + "-"*(len-pos)
-    sys.stdout.write("Epoch: %-4s %-6s [%s]\r" % (epoch, str(current_step)+"/"+str(total_steps), progress))
+    sys.stdout.write("Epoch: %-4s %-7s[%s]\r" % (epoch, str(current_step)+"/"+str(total_steps), progress))
     sys.stdout.flush()
 
 
-class BaseNet:
+class BaseNet(object):
     def __init__(self):
         self.layers = {}
         self.input_shapes = {}
@@ -132,7 +132,7 @@ class BaseNet:
 
 class CovNet(BaseNet):
     def __init__(self):
-        super().__init__()
+        super(CovNet, self).__init__()
 
     def compile(self, loss_func, optimizer, initalizer):
         self.loss_func = loss_func
