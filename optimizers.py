@@ -39,7 +39,7 @@ class RMSProp:
     def __init__(self, lr=0.01, oth=0.9):
         self.lr = lr
         self.oth = oth
-
+        self.v = None
 
     def update(self, params, grads):
         if self.v is None:
