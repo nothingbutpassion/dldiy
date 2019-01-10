@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def _print_progress(epoch, total_steps, current_step):
     import sys
     len = 40
@@ -138,37 +137,6 @@ class Sequential(object):
     def accuracy(self, x, y_true):
         y_pred = self.predict(x)
         return self.loss_func.accuracy(y_true, y_pred)
-
-
-# class CovNet(BaseNet):
-#     def __init__(self):
-#         super(CovNet, self).__init__()
-
-#     def compile(self, loss_func, optimizer, initalizer):
-#         self.loss_func = loss_func
-#         self.optimizer = optimizer
-#         self.initalizer = initalizer
-#         for k in self.layers.keys():
-#             if self.layers[k].name == "affine":
-#                 fan_in = self.input_shapes[k][-1]
-#                 fan_out = self.output_shapes[k][-1]
-#                 self.layers[k].W = self.initalizer((fan_in, fan_out))
-#                 self.layers[k].b = self.initalizer((fan_out,))
-#                 self.params["W" + str(k)] = self.layers[k].W
-#                 self.params["b" + str(k)] = self.layers[k].b
-#             if self.layers[k].name == "cov2d":
-#                 N, C, H, W = self.input_shapes[k]
-#                 N, FN, OH, OW = self.output_shapes[k]
-#                 # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
-#                 # b.shape: (FN,)
-#                 fan_in = C * self.layers[k].FH * self.layers[k].FW
-#                 fan_out = FN
-#                 self.layers[k].W = self.initalizer((fan_in, fan_out))
-#                 self.layers[k].b = self.initalizer((fan_out,))
-#                 self.params["W" + str(k)] = self.layers[k].W
-#                 self.params["b" + str(k)] = self.layers[k].b
-    
-
 
     
 
