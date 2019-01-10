@@ -1,6 +1,16 @@
 import numpy as np
 from utils import im2col, col2im
 
+class Layer(object):
+    def __init__(self):
+        self.name = "layer"
+        self.input_shape = None
+        self.output_shape = None
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+        
+
 class ReLU:
     def __init__(self):
         self.name = "relu"
@@ -32,10 +42,10 @@ class Sigmoid:
 
 
 class Affine:
-    def __init__(self, W=None, b=None):
+    def __init__(self):
         self.name = "affine"
-        self.W = W
-        self.b = b
+        self.W = None
+        self.b = None
         self.x = None
         self.x_shape = None
         self.dW = None
@@ -143,9 +153,9 @@ class Cov2D:
         dx = col2im(dcol, self.x.shape, self.FH, self.FW, self.stride, self.pad)
         return dx
 
-class MaxPooling:
+class MaxPooling2D:
     def __init__(self, pool_h, pool_w, stride=1, pad=0):
-        self.name = 'maxpooling'
+        self.name = 'maxpooling2d'
         self.pool_h = pool_h
         self.pool_w = pool_w
         self.stride = stride

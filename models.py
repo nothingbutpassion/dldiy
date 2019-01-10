@@ -9,8 +9,7 @@ def _print_progress(epoch, total_steps, current_step):
     sys.stdout.write("Epoch: %-4s %-7s[%s]\r" % (epoch, str(current_step)+"/"+str(total_steps), progress))
     sys.stdout.flush()
 
-
-class BaseNet(object):
+class Sequential(object):
     def __init__(self):
         self.layers = {}
         self.input_shapes = {}
@@ -49,6 +48,17 @@ class BaseNet(object):
                 self.layers[k].b = self.initalizer((fan_out,))
                 self.params["W" + str(k)] = self.layers[k].W
                 self.params["b" + str(k)] = self.layers[k].b
+            if self.layers[k].name == "cov2d":
+                N, C, H, W = self.input_shapes[k]
+                N, FN, OH, OW = self.output_shapes[k]
+                # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
+                # b.shape: (FN,)
+                fan_in = C * self.layers[k].FH * self.layers[k].FW
+                fan_out = FN
+                self.layers[k].W = self.initalizer((fan_in, fan_out))
+                self.layers[k].b = self.initalizer((fan_out,))
+                self.params["W" + str(k)] = self.layers[k].W
+                self.params["b" + str(k)] = self.layers[k].b
 
     def train_one_batch(self, batch_x, batch_y):
         # forward propagation
@@ -65,7 +75,8 @@ class BaseNet(object):
 
         # update grads
         for k,v in self.layers.items():
-            if self.layers[k].name == "affine":
+            # if self.layers[k].name == "affine":
+            if hasattr(self.layers[k], "dW") and hasattr(self.layers[k], "db"):
                 self.grads["W" + str(k)] = self.layers[k].dW
                 self.grads["b" + str(k)] = self.layers[k].db
         self.optimizer.update(self.params, self.grads)
@@ -78,7 +89,6 @@ class BaseNet(object):
                 batch_x = train_x[i*batch_size:(i+1)*batch_size]
                 batch_y = train_y[i*batch_size:(i+1)*batch_size]
                 self.train_one_batch(batch_x, batch_y)
-                #print("Epoch: %-4s step: %-20s" % (str(j+1), str(i+1)+"/"+str(steps)), end="\r")
                 _print_progress(j+1, steps, i+1)
 
             # predict all train samples
@@ -130,53 +140,33 @@ class BaseNet(object):
         return self.loss_func.accuracy(y_true, y_pred)
 
 
-class CovNet(BaseNet):
-    def __init__(self):
-        super(CovNet, self).__init__()
+# class CovNet(BaseNet):
+#     def __init__(self):
+#         super(CovNet, self).__init__()
 
-    def compile(self, loss_func, optimizer, initalizer):
-        self.loss_func = loss_func
-        self.optimizer = optimizer
-        self.initalizer = initalizer
-        for k in self.layers.keys():
-            if self.layers[k].name == "affine":
-                fan_in = self.input_shapes[k][-1]
-                fan_out = self.output_shapes[k][-1]
-                self.layers[k].W = self.initalizer((fan_in, fan_out))
-                self.layers[k].b = self.initalizer((fan_out,))
-                self.params["W" + str(k)] = self.layers[k].W
-                self.params["b" + str(k)] = self.layers[k].b
-            if self.layers[k].name == "cov2d":
-                N, C, H, W = self.input_shapes[k]
-                N, FN, OH, OW = self.output_shapes[k]
-                # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
-                # b.shape: (FN,)
-                fan_in = C * self.layers[k].FH * self.layers[k].FW
-                fan_out = FN
-                self.layers[k].W = self.initalizer((fan_in, fan_out))
-                self.layers[k].b = self.initalizer((fan_out,))
-                self.params["W" + str(k)] = self.layers[k].W
-                self.params["b" + str(k)] = self.layers[k].b
-
-    def train_one_batch(self, batch_x, batch_y):
-        # forward propagation
-        x = batch_x
-        for v in self.layers.values():
-            x = v.forward(x)
-
-        # backward propagation
-        keys = list(self.layers.keys())
-        keys.reverse()
-        grad = self.loss_func.grad(batch_y, x)
-        for k in keys:
-            grad = self.layers[k].backward(grad)
-
-        # update grads
-        for k,v in self.layers.items():
-            if self.layers[k].name == "affine" or self.layers[k].name == "cov2d":
-                self.grads["W" + str(k)] = self.layers[k].dW
-                self.grads["b" + str(k)] = self.layers[k].db
-        self.optimizer.update(self.params, self.grads)
+#     def compile(self, loss_func, optimizer, initalizer):
+#         self.loss_func = loss_func
+#         self.optimizer = optimizer
+#         self.initalizer = initalizer
+#         for k in self.layers.keys():
+#             if self.layers[k].name == "affine":
+#                 fan_in = self.input_shapes[k][-1]
+#                 fan_out = self.output_shapes[k][-1]
+#                 self.layers[k].W = self.initalizer((fan_in, fan_out))
+#                 self.layers[k].b = self.initalizer((fan_out,))
+#                 self.params["W" + str(k)] = self.layers[k].W
+#                 self.params["b" + str(k)] = self.layers[k].b
+#             if self.layers[k].name == "cov2d":
+#                 N, C, H, W = self.input_shapes[k]
+#                 N, FN, OH, OW = self.output_shapes[k]
+#                 # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
+#                 # b.shape: (FN,)
+#                 fan_in = C * self.layers[k].FH * self.layers[k].FW
+#                 fan_out = FN
+#                 self.layers[k].W = self.initalizer((fan_in, fan_out))
+#                 self.layers[k].b = self.initalizer((fan_out,))
+#                 self.params["W" + str(k)] = self.layers[k].W
+#                 self.params["b" + str(k)] = self.layers[k].b
     
 
 
