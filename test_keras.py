@@ -35,14 +35,7 @@ def test_mnist():
     plt.show(block=True)
 
 def test_mnist_with_cov2d():
-    # (train_x, train_y), (test_x, test_y) = mnist.load_data()
-    # val_x = train_x[50000:]
-    # val_x = val_x.reshape(val_x.shape[0], 1, val_x.shape[1], val_x.shape[2])
-    # val_y = one_hot(train_y[50000:], 10)
-    # train_x = train_x[:50000]
-    # train_x = train_x.reshape(train_x.shape[0], 1, train_x.shape[1], train_x.shape[2])
-    # train_y =one_hot(train_y[:50000], 10)
-
+    
     (train_x, train_y), (test_x, test_y) = mnist.load_data(flatten=False)
     val_x = train_x[50000:]
     val_y = train_y[50000:]
