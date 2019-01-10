@@ -35,7 +35,6 @@ def test_mnist():
     plt.show(block=True)
 
 def test_mnist_with_cov2d():
-    
     (train_x, train_y), (test_x, test_y) = mnist.load_data(flatten=False)
     val_x = train_x[50000:]
     val_y = train_y[50000:]
