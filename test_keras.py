@@ -1,24 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from keras.datasets import mnist
+import datasets.mnist as mnist
 from keras import models
 from keras import layers
 from keras import optimizers
 from keras import losses
 
-def one_hot(indices, num_classes):
-    T = np.zeros(indices.shape + (10,))
-    for i, row in enumerate(T):
-        row[indices[i]] = 1
-    return T
-
 
 def test_mnist():
     (train_x, train_y), (test_x, test_y) = mnist.load_data()
     val_x = train_x[50000:]
-    val_y = one_hot(train_y[50000:], 10)
+    val_y = train_y[50000:]
     train_x = train_x[:50000]
-    train_y =one_hot(train_y[:50000], 10)
+    train_y = train_y[:50000]
 
     model = models.Sequential()
     model.add(layers.Flatten(input_shape=(28, 28)))
@@ -41,13 +35,19 @@ def test_mnist():
     plt.show(block=True)
 
 def test_mnist_with_cov2d():
-    (train_x, train_y), (test_x, test_y) = mnist.load_data()
+    # (train_x, train_y), (test_x, test_y) = mnist.load_data()
+    # val_x = train_x[50000:]
+    # val_x = val_x.reshape(val_x.shape[0], 1, val_x.shape[1], val_x.shape[2])
+    # val_y = one_hot(train_y[50000:], 10)
+    # train_x = train_x[:50000]
+    # train_x = train_x.reshape(train_x.shape[0], 1, train_x.shape[1], train_x.shape[2])
+    # train_y =one_hot(train_y[:50000], 10)
+
+    (train_x, train_y), (test_x, test_y) = mnist.load_data(flatten=False)
     val_x = train_x[50000:]
-    val_x = val_x.reshape(val_x.shape[0], 1, val_x.shape[1], val_x.shape[2])
-    val_y = one_hot(train_y[50000:], 10)
+    val_y = train_y[50000:]
     train_x = train_x[:50000]
-    train_x = train_x.reshape(train_x.shape[0], 1, train_x.shape[1], train_x.shape[2])
-    train_y =one_hot(train_y[:50000], 10)
+    train_y = train_y[:50000]
 
     model = models.Sequential()
     model.add(layers.Conv2D(4, (3, 3), strides=(1,1), padding='same', data_format="channels_first", activation="relu", input_shape=(1, 28, 28)))

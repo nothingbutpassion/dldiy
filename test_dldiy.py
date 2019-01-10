@@ -1,6 +1,6 @@
 import numpy as np
-import datasets.mnist as mnist
 import matplotlib.pyplot as plt
+import datasets.mnist as mnist
 import layers
 import losses
 import optimizers
