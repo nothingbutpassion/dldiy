@@ -46,28 +46,19 @@ class Affine:
         self.name = "affine"
         self.W = None
         self.b = None
-        self.x = None
-        self.x_shape = None
         self.dW = None
         self.db = None
+        self.x = None
 
     def forward(self, x):
-        self.x = x
-        self.x_shape = x.shape
-        if x.ndim == 1:
-            self.x = x.reshape(1, -1)          
+        self.x = x        
         y = np.dot(self.x, self.W) + self.b
-        if x.ndim == 1:
-            y = y.reshape(-1)
         return y
 
     def backward(self, dy):
-        if dy.ndim == 1:
-            dy = dy.reshape(1, -1)
         self.dW = np.dot(self.x.T, dy)
         self.db = np.sum(dy, axis=0)
         dx = np.dot(dy, self.W.T)
-        dx = dx.reshape(*self.x_shape)
         return dx
 
 class Softmax:
@@ -76,25 +67,16 @@ class Softmax:
         self.y = None
         
     def forward(self, x):
-        if x.ndim == 2:
-            x = x.T
-            x = x - np.max(x, axis=0)
-            exp_x = np.exp(x)
-            y = exp_x/np.sum(exp_x, axis=0)
-            self.y = y.T
-        else:
-            x = x - np.max(x)
-            exp_x = np.exp(x)
-            self.y = exp_x/np.sum(exp_x)
+        x = x.T
+        x = x - np.max(x, axis=0)
+        exp_x = np.exp(x)
+        y = exp_x/np.sum(exp_x, axis=0)
+        self.y = y.T
         return self.y
         
     def backward(self, dy):
-        if dy.ndim == 2: 
-            ds = np.sum((self.y * dy).T, axis=0)
-            dx = self.y * (dy.T - ds).T
-        else:
-            ds = np.sum(self.y * dy)
-            dx = self.y * (dy - ds)
+        ds = np.sum((self.y * dy).T, axis=0)
+        dx = self.y * (dy.T - ds).T
         return dx
 
 class Cov2D:
@@ -108,7 +90,7 @@ class Cov2D:
         self.b = b
         self.dW = None
         self.db = None
-        self.x = None
+        self.x_shape = None
         self.col = None
 
     def forward(self, x):
@@ -129,7 +111,7 @@ class Cov2D:
         y = y.reshape(N, OH, OW, -1).transpose(0, 3, 1, 2)
 
         # save for backward
-        self.x = x
+        self.x_shape = x.shape
         self.col = col
 
         return y
@@ -150,7 +132,7 @@ class Cov2D:
         self.dW = np.dot(self.col.T, dy)
         self.db = np.sum(dy, axis=0)
         dcol = np.dot(dy, self.W.T)
-        dx = col2im(dcol, self.x.shape, self.FH, self.FW, self.stride, self.pad)
+        dx = col2im(dcol, self.x_shape, self.FH, self.FW, self.stride, self.pad)
         return dx
 
 class MaxPooling2D:
@@ -160,13 +142,13 @@ class MaxPooling2D:
         self.pool_w = pool_w
         self.stride = stride
         self.pad = pad
-        self.x = None
+        self.x_shape = None
         self.argmax = None
 
     def forward(self, x):
         N, C, H, W = x.shape
-        out_h = (H - self.pool_h)//self.stride + 1
-        out_w = (W - self.pool_w)//self.stride + 1
+        out_h = (H + 2*self.pad - self.pool_h)//self.stride + 1
+        out_w = (W + 2*self.pad- self.pool_w)//self.stride + 1
 
         # col.shape: (N*out_h*out_w, C*pool_h*pool_w)
         # after reshape: (N*out_h*out_w*C, pool_h*pool_w)
@@ -174,7 +156,7 @@ class MaxPooling2D:
         col = col.reshape(-1, self.pool_h*self.pool_w)
         
         # save for backward
-        self.x = x
+        self.x_shape = x.shape
         self.argmax = np.argmax(col, axis=1)
 
         # col.shape: (N*out_h*out_w*C, pool_h*pool_w)
@@ -200,23 +182,19 @@ class MaxPooling2D:
         col = col.reshape(N*out_h*out_w, -1)
 
         # col.shape: (N*out_h*out_w, C*pool_h*pool_w) => dx.shape (N, C, H, W)
-        dx = col2im(col, self.x.shape, self.pool_h, self.pool_w, self.stride, self.pad)
+        dx = col2im(col, self.x_shape, self.pool_h, self.pool_w, self.stride, self.pad)
         return dx
 
 class Flatten:
     def __init__(self):
         self.name = 'flatten'
-        self.x = None
+        self.x_shape = None
 
     def forward(self, x):
-        self.x = x
-        if x.ndim == 1:
-            return x
-        y = x.reshape(x.shape[0], -1)
-        return y
+        self.x_shape = x.shape
+        return x.reshape(x.shape[0], -1)
 
     def backward(self, dy):
-        dx = dy.reshape(self.x.shape)
-        return dx
+        return dy.reshape(self.x_shape)
 
 

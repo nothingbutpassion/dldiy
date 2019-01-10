@@ -64,4 +64,4 @@ def test_mnist_with_cov2d():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_mnist()
+    test_mnist_with_cov2d()

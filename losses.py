@@ -3,7 +3,6 @@ import numpy as np
 def _mean_squared_error(y_true, y_pred):
     if y_pred.ndim == 1: 
         return 0.5*np.sum((y_true - y_pred)**2)
-
     return 0.5*np.sum((y_true - y_pred)**2)/y_pred.shape[0]
 
 def _categorical_crossentropy(y_true, y_pred):
