@@ -7,7 +7,7 @@ import optimizers
 import initializers
 import networks
 
-def test_basenet():
+def test_mnist():
     (train_x, train_y), (test_x, test_y) = mnist.load_data()
     val_x = train_x[50000:]
     val_y = train_y[50000:]
@@ -35,7 +35,7 @@ def test_basenet():
     plt.legend()
     plt.show(block=True)
 
-def test_covnet():
+def test_mnist_with_cov2d():
     (train_x, train_y), (test_x, test_y) = mnist.load_data(flatten=False)
     val_x = train_x[50000:]
     val_y = train_y[50000:]
@@ -46,11 +46,6 @@ def test_covnet():
     net.add(layers.Cov2D(3, 3, stride=1, pad=1), (None, 4, 28, 28), input_shape=(None, 1, 28, 28))  
     net.add(layers.ReLU(), (None, 4, 28, 28))
     net.add(layers.MaxPooling(2, 2, stride=2), (None, 4, 14, 14))
-    
-    # net.add(layers.Cov2D(5, 5), (None, 8, 10, 10))
-    # net.add(layers.ReLU(), (None, 8, 10, 10))
-    # net.add(layers.MaxPooling(2, 2, stride=2), (None, 8, 5, 5))
-
     net.add(layers.Flatten(), (None, 4*14*14))
     net.add(layers.Affine(), (None, 10))
     net.add(layers.Softmax(), (None, 10))
@@ -69,4 +64,4 @@ def test_covnet():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_covnet()
+    test_mnist_with_cov2d()
