@@ -1,4 +1,5 @@
 import numpy as np
+from initializers import HeNormal
 from utils import im2col, col2im
 
 class Layer(object):
@@ -9,15 +10,13 @@ class Layer(object):
     
     def build(self, input_shape):
         self.input_shape = input_shape
-        self.output_shape = self.input_shape
-        return self.output_shape 
-        
+        self.output_shape = input_shape
 
 class ReLU(Layer):
     def __init__(self, **args):
         super(ReLU, self).__init__(**args)
         if not self.name:
-            self.name = "relu"
+            self.name = "relu" 
         self.mask = None
 
     def forward(self, x):
@@ -34,7 +33,7 @@ class ReLU(Layer):
 class Sigmoid(Layer):
     def __init__(self, **args):
         super(Sigmoid, self).__init__(**args)
-        if not self.name: 
+        if not self.name:
             self.name = "sigmoid"
         self.y = None
 
@@ -47,15 +46,26 @@ class Sigmoid(Layer):
 
 
 class Linear(Layer):
-    def __init__(self, **args):
+    def __init__(self, units, initializer=HeNormal(), **args):
         super(Linear, self).__init__(**args)
         if not self.name: 
             self.name = "linear"
+        self.units = units
+        self.initializer = initializer
         self.W = None
         self.b = None
         self.dW = None
         self.db = None
         self.x = None
+
+    def build(self, input_shape):
+        assert(len(input_shape) == 2)
+        self.input_shape = input_shape
+        self.W = self.initializer((input_shape[-1], self.units))
+        self.b = self.initializer((self.units,))
+        outputs = list(input_shape)
+        outputs[-1] = self.units
+        self.output_shape = tuple(outputs)
 
     def forward(self, x):
         self.x = x        
@@ -86,15 +96,17 @@ class Softmax(Layer):
         ds = np.sum((self.y * dy).T, axis=0)
         return self.y * (dy.T - ds).T
 
-class Cov2D(Layer):
-    def __init__(self, filter_w, filter_h, stride=1, pad=0, **args):
-        super(Cov2D, self).__init__(**args)
+class Conv2D(Layer):
+    def __init__(self, filters, kernel_size, stride=1, pad=0, initializer=HeNormal(), **args):
+        super(Conv2D, self).__init__(**args)
         if not self.name: 
-            self.name = "cov2d"
-        self.FW = filter_w
-        self.FH = filter_h
+            self.name = "conv2d"
+        self.FN = filters
+        self.FW = kernel_size[0]
+        self.FH = kernel_size[1]
         self.stride = stride
         self.pad = pad
+        self.initializer = initializer
         self.W = None
         self.b = None
         self.dW = None
@@ -102,12 +114,26 @@ class Cov2D(Layer):
         self.x_shape = None
         self.col = None
 
+    def build(self, input_shape):
+        assert(len(input_shape) == 4)
+        self.input_shape = input_shape
+        N, C, H, W = input_shape
+        OH = (H + 2*self.pad - self.FH)//self.stride + 1
+        OW = (W + 2*self.pad - self.FW)//self.stride + 1
+        self.W = self.initializer((C*self.FH*self.FW, self.FN))
+        self.b = self.initializer((self.FN,))
+        self.output_shape = (N, self.FN, OH, OW)
+
     def forward(self, x):
         N, C, H, W = x.shape
         OH = (H + 2*self.pad - self.FH)//self.stride + 1
         OW = (W + 2*self.pad - self.FW)//self.stride + 1
         col = im2col(x, self.FH, self.FW, self.stride, self.pad)
         
+        # save for backward
+        self.x_shape = x.shape
+        self.col = col
+
         # NOTES
         # W.shape: (C*FH*FW, FN)  wherein, each filter is a column
         # b.shape: (FN,)
@@ -118,11 +144,6 @@ class Cov2D(Layer):
         # FN (filter nums) == OC (output channels)
         y = np.dot(col, self.W) + self.b
         y = y.reshape(N, OH, OW, -1).transpose(0, 3, 1, 2)
-
-        # save for backward
-        self.x_shape = x.shape
-        self.col = col
-
         return y
 
     def backward(self, dy):
@@ -145,16 +166,24 @@ class Cov2D(Layer):
         return dx
 
 class MaxPooling2D(Layer):
-    def __init__(self, pool_h, pool_w, stride=1, pad=0, **args):
+    def __init__(self, pool_size, stride=1, pad=0, **args):
         super(MaxPooling2D, self).__init__(**args)
         if not self.name: 
             self.name = "maxpooling2d"
-        self.pool_h = pool_h
-        self.pool_w = pool_w
+        self.pool_h = pool_size[0]
+        self.pool_w = pool_size[1]
         self.stride = stride
         self.pad = pad
         self.x_shape = None
         self.argmax = None
+    
+    def build(self, input_shape):
+        assert(len(input_shape) == 4)
+        self.input_shape = input_shape
+        N, C, H, W = input_shape
+        out_h = (H + 2*self.pad - self.pool_h)//self.stride + 1
+        out_w = (W + 2*self.pad- self.pool_w)//self.stride + 1
+        self.output_shape = (N, C, out_h, out_w)
 
     def forward(self, x):
         N, C, H, W = x.shape
@@ -204,6 +233,14 @@ class Flatten(Layer):
         if not self.name: 
             self.name = "flatten"
         self.x_shape = None
+    
+    def build(self, input_shape):
+        assert(len(input_shape) > 1)
+        self.input_shape = input_shape
+        features = 1
+        for i in range(1, len(input_shape)):
+            features *= input_shape[i]
+        self.output_shape = (input_shape[0], features)
 
     def forward(self, x):
         self.x_shape = x.shape

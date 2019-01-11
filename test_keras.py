@@ -13,15 +13,12 @@ def test_mnist():
     val_y = train_y[50000:]
     train_x = train_x[:50000]
     train_y = train_y[:50000]
-
     model = models.Sequential()
-    model.add(layers.Flatten(input_shape=(28, 28)))
-    model.add(layers.Dense(28, activation="relu"))
+    model.add(layers.Dense(28, activation="relu", input_shape=(train_x.shape[1],)))
     model.add(layers.Dense(10, activation="relu"))
     model.add(layers.Dense(10, activation="softmax"))
     model.compile(optimizer=optimizers.SGD(lr=0.001), loss=losses.categorical_crossentropy, metrics=['accuracy'])
     model.summary()
-
     history = model.fit(train_x, train_y, batch_size=200, epochs=32, validation_data=(val_x, val_y)).history
     epochs = range(1, len(history["loss"])+1)
     plt.plot(epochs, history["loss"], 'ro', label="Traning loss")
@@ -40,7 +37,6 @@ def test_mnist_with_cov2d():
     val_y = train_y[50000:]
     train_x = train_x[:50000]
     train_y = train_y[:50000]
-
     model = models.Sequential()
     model.add(layers.Conv2D(4, (3, 3), strides=(1,1), padding='same', data_format="channels_first", activation="relu", input_shape=(1, 28, 28)))
     model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2), data_format="channels_first"))
@@ -48,7 +44,6 @@ def test_mnist_with_cov2d():
     model.add(layers.Dense(10, activation="softmax"))
     model.compile(optimizer=optimizers.SGD(lr=0.001), loss=losses.categorical_crossentropy, metrics=['accuracy'])
     model.summary()
-
     history = model.fit(train_x, train_y, batch_size=200, epochs=20, validation_data=(val_x, val_y)).history
     epochs = range(1, len(history["loss"])+1)
     plt.plot(epochs, history["loss"], 'ro', label="Traning loss")
@@ -62,4 +57,4 @@ def test_mnist_with_cov2d():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_mnist_with_cov2d()
+    test_mnist()
