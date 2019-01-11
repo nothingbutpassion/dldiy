@@ -2,18 +2,22 @@ import numpy as np
 from utils import im2col, col2im
 
 class Layer(object):
-    def __init__(self):
-        self.name = "layer"
-        self.input_shape = None
-        self.output_shape = None
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
+    def __init__(self, name=None, input_shape=None, output_shape=None):
+        self.name = name
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+    
+    def build(self, input_shape):
+        self.input_shape = input_shape
+        self.output_shape = self.input_shape
+        return self.output_shape 
         
 
-class ReLU:
-    def __init__(self):
-        self.name = "relu"
+class ReLU(Layer):
+    def __init__(self, **args):
+        super(ReLU, self).__init__(**args)
+        if not self.name:
+            self.name = "relu"
         self.mask = None
 
     def forward(self, x):
@@ -27,9 +31,11 @@ class ReLU:
         dx[self.mask] = 0
         return dx
 
-class Sigmoid:
-    def __init__(self):
-        self.name = "sigmoid"
+class Sigmoid(Layer):
+    def __init__(self, **args):
+        super(Sigmoid, self).__init__(**args)
+        if not self.name: 
+            self.name = "sigmoid"
         self.y = None
 
     def forward(self, x):
@@ -37,13 +43,14 @@ class Sigmoid:
         return self.y
 
     def backward(self, dy):
-        dx = dy*self.y*(1-self.y)
-        return dx
+        return dy*self.y*(1-self.y)
 
 
-class Affine:
-    def __init__(self):
-        self.name = "affine"
+class Linear(Layer):
+    def __init__(self, **args):
+        super(Linear, self).__init__(**args)
+        if not self.name: 
+            self.name = "linear"
         self.W = None
         self.b = None
         self.dW = None
@@ -52,18 +59,19 @@ class Affine:
 
     def forward(self, x):
         self.x = x        
-        y = np.dot(self.x, self.W) + self.b
-        return y
+        return np.dot(self.x, self.W) + self.b
 
     def backward(self, dy):
         self.dW = np.dot(self.x.T, dy)
         self.db = np.sum(dy, axis=0)
-        dx = np.dot(dy, self.W.T)
-        return dx
+        return np.dot(dy, self.W.T)
 
-class Softmax:
-    def __init__(self):
-        self.name = "softmax"
+
+class Softmax(Layer):
+    def __init__(self, **args):
+        super(Softmax, self).__init__(**args)
+        if not self.name: 
+            self.name = "softmax"
         self.y = None
         
     def forward(self, x):
@@ -76,18 +84,19 @@ class Softmax:
         
     def backward(self, dy):
         ds = np.sum((self.y * dy).T, axis=0)
-        dx = self.y * (dy.T - ds).T
-        return dx
+        return self.y * (dy.T - ds).T
 
-class Cov2D:
-    def __init__(self, filter_w, filter_h, stride=1, pad=0, W=None, b=None):
-        self.name = "cov2d"
+class Cov2D(Layer):
+    def __init__(self, filter_w, filter_h, stride=1, pad=0, **args):
+        super(Cov2D, self).__init__(**args)
+        if not self.name: 
+            self.name = "cov2d"
         self.FW = filter_w
         self.FH = filter_h
         self.stride = stride
         self.pad = pad
-        self.W = W
-        self.b = b
+        self.W = None
+        self.b = None
         self.dW = None
         self.db = None
         self.x_shape = None
@@ -135,9 +144,11 @@ class Cov2D:
         dx = col2im(dcol, self.x_shape, self.FH, self.FW, self.stride, self.pad)
         return dx
 
-class MaxPooling2D:
-    def __init__(self, pool_h, pool_w, stride=1, pad=0):
-        self.name = 'maxpooling2d'
+class MaxPooling2D(Layer):
+    def __init__(self, pool_h, pool_w, stride=1, pad=0, **args):
+        super(MaxPooling2D, self).__init__(**args)
+        if not self.name: 
+            self.name = "maxpooling2d"
         self.pool_h = pool_h
         self.pool_w = pool_w
         self.stride = stride
@@ -150,6 +161,7 @@ class MaxPooling2D:
         out_h = (H + 2*self.pad - self.pool_h)//self.stride + 1
         out_w = (W + 2*self.pad- self.pool_w)//self.stride + 1
 
+        # x.shape: (N, C, H, W)
         # col.shape: (N*out_h*out_w, C*pool_h*pool_w)
         # after reshape: (N*out_h*out_w*C, pool_h*pool_w)
         col = im2col(x, self.pool_h, self.pool_w, self.stride, self.pad)
@@ -181,13 +193,16 @@ class MaxPooling2D:
         col[np.arange(N*out_h*out_w*C), self.argmax.flatten()] = dy.flatten()
         col = col.reshape(N*out_h*out_w, -1)
 
-        # col.shape: (N*out_h*out_w, C*pool_h*pool_w) => dx.shape (N, C, H, W)
+        # col.shape: (N*out_h*out_w, C*pool_h*pool_w)
+        # dx.shape (N, C, H, W)
         dx = col2im(col, self.x_shape, self.pool_h, self.pool_w, self.stride, self.pad)
         return dx
 
-class Flatten:
-    def __init__(self):
-        self.name = 'flatten'
+class Flatten(Layer):
+    def __init__(self, **args):
+        super(Flatten, self).__init__(**args)
+        if not self.name: 
+            self.name = "flatten"
         self.x_shape = None
 
     def forward(self, x):

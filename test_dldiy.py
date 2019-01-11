@@ -15,11 +15,11 @@ def test_mnist():
     train_y = train_y[:50000]
     batch_size = 200
     modle = models.Sequential()
-    modle.add(layers.Affine(), (None, 28), input_shape=(None, train_x.shape[1]))  
+    modle.add(layers.Linear(), (None, 28), input_shape=(None, train_x.shape[1]))  
     modle.add(layers.ReLU(), (None, 28))
-    modle.add(layers.Affine(), (None, 10))
+    modle.add(layers.Linear(), (None, 10))
     modle.add(layers.ReLU(), (None, 10))
-    modle.add(layers.Affine(), (None, 10))
+    modle.add(layers.Linear(), (None, 10))
     modle.add(layers.Softmax(), (None, 10))
     modle.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001), initializers.HeNormal())
     modle.summary()
@@ -47,7 +47,7 @@ def test_mnist_with_cov2d():
     modle.add(layers.ReLU(), (None, 4, 28, 28))
     modle.add(layers.MaxPooling2D(2, 2, stride=2), (None, 4, 14, 14))
     modle.add(layers.Flatten(), (None, 4*14*14))
-    modle.add(layers.Affine(), (None, 10))
+    modle.add(layers.Linear(), (None, 10))
     modle.add(layers.Softmax(), (None, 10))
     modle.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001), initializers.HeNormal())
     modle.summary()

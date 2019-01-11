@@ -40,7 +40,7 @@ class Sequential(object):
         self.optimizer = optimizer
         self.initalizer = initalizer
         for k in self.layers.keys():
-            if self.layers[k].name == "affine":
+            if self.layers[k].name == "linear":
                 fan_in = self.input_shapes[k][-1]
                 fan_out = self.output_shapes[k][-1]
                 self.layers[k].W = self.initalizer((fan_in, fan_out))
