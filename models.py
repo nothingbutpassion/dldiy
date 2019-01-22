@@ -1,7 +1,8 @@
+from __future__ import print_function
 import numpy as np
+import sys
 
 def _print_progress(epoch, total_steps, current_step):
-    import sys
     pos = int(round(40.0*current_step/total_steps))
     progress = "="*pos + "-"*(40-pos)
     sys.stdout.write("Epoch: %-4s %-7s[%s]\r" % (epoch, str(current_step)+"/"+str(total_steps), progress))
