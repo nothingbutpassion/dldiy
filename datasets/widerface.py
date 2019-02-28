@@ -32,8 +32,8 @@ def _parse_bbx(root, image_dir, bbox_file):
                 # NOTES:
                 # exclude invalid bounding box
                 # bounding box: x1, y1, w, h, blur, expression, illumination, invalid, occlusion, pose
-                if bbox[7] != "1":
-                    sample["bboxs"].append(bbox)
+                # if bbox[7] != "1":
+                sample["bboxs"].append(bbox)
             if len(sample["bboxs"]) > 0:
                 data.append(sample)
             i = i + 2 + bboxs_num
@@ -80,9 +80,9 @@ def _test_data(root):
             break
 
     img = Image.open(image_file)
-    img = img.rotate(180)
-    img = img.resize((2048, 1536), Image.BILINEAR)
-    img = img.crop((0, 0, 1024, 768))
+    # img = img.rotate(180)
+    # img = img.resize((2048, 1536), Image.BILINEAR)
+    # img = img.crop((0, 0, 1024, 768))
     data = np.asarray(img)
     fig, ax = plt.subplots(1)
     ax.imshow(data)
