@@ -4,7 +4,7 @@ import zipfile
 import pickle
 import numpy as np
 
-dataset_dir = os.path.dirname(os.path.abspath(__file__)) + "/winderface"
+dataset_dir = os.path.dirname(os.path.abspath(__file__)) + "/widerface"
 save_file = dataset_dir + "/winderface.pkl"
 
 def _extract_files(root):
@@ -94,5 +94,5 @@ def _test_data(root):
 
 
 if __name__ == "__main__":
-    _test_data("D:/share/wider")
+    _test_data(dataset_dir)
 
