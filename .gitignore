@@ -1,0 +1,4 @@
+*.pyc
+*.pkl
+datasets/widerface/*
+datasets/mnist/*
