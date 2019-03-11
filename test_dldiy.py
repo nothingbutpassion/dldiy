@@ -4,7 +4,6 @@ import datasets.mnist as mnist
 import layers
 import losses
 import optimizers
-import initializers
 import models
 
 def test_mnist():
