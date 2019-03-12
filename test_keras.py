@@ -1,10 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import datasets.mnist as mnist
-from keras import models
-from keras import layers
-from keras import optimizers
-from keras import losses
+from tensorflow.keras import models
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+from tensorflow.keras import losses
 
 
 def test_mnist():
@@ -57,4 +57,4 @@ def test_mnist_with_cov2d():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_mnist()
+    test_mnist_with_cov2d()

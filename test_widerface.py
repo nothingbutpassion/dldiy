@@ -41,7 +41,7 @@ def detection_loss(y_true, y_pred):
     p2 = 1 - p1
     object_loss = -np.sum(t1*np.log(p1) + t2*np.log(p2))
     box_loss = np.sum((bx-tx)**2 + (by-ty)**2 + (bw-tw)**2 + (bh-th)**2)
-    return 0.5*object_loss + 5*box_loss
+    return 0.5*object_loss + 2.0*box_loss
 
 def detection_accuracy(y_true, y_pred):
     b1, b2, bx, by, bw, bh = y_pred
@@ -78,7 +78,7 @@ class DetectionLoss:
         batch_size = y_true.shape[0]
         batch_grad = np.zeros_like(y_pred)
         r1 = 0.5
-        r2 = 5
+        r2 = 2
         for i in range(batch_size):
             b1, b2, bx, by, bw, bh = y_pred[i]
             t1, t2, tx, ty, tw, th = y_true[i]
@@ -112,15 +112,15 @@ class DataIterator:
             raise IndexError()
 
         batch_data = self.data[self.batch_size*batch_index : self.batch_size*(batch_index + 1)]
-        batch_x = np.zeros((self.batch_size, 3, self.output_size[0], self.output_size[1]), dtype='uint8')
-        batch_y = np.zeros(((self.batch_size,) + self.feature_shape), dtype='float')
+        batch_x = np.zeros((self.batch_size, 3, self.output_size[0], self.output_size[1]), dtype='float32')
+        batch_y = np.zeros(((self.batch_size,) + self.feature_shape), dtype='float32')
         for i, sample in enumerate(batch_data):
             image = Image.open(sample["image"])
             x_rate, y_rate = self.output_size[0]/image.size[0], self.output_size[1]/image.size[1]
             image = image.resize(self.output_size, Image.BILINEAR)
             image = np.asarray(image)
             image = image.transpose((2, 0, 1))
-            batch_x[i, :, :, :] = image
+            batch_x[i, :, :, :] = (image - 128)/255
             boxes = np.array(sample["boxes"])
             for box in boxes:
                 box[0] = box[0]*x_rate
@@ -243,7 +243,7 @@ def test_network():
         exp_b2 = np.exp(b2)
         exp_s = exp_b1 + exp_b2
         y_pred[:2,:,:] = (exp_b1/exp_s, exp_b2/exp_s)
-        boxes = decode((128, 128), y_pred, 0.5)
+        boxes = decode((128, 128), y_pred, 0.4)
         if len(boxes) > 0:
             ax = plt.subplot(1, 1, 1)
             ax.imshow(x_true[0].transpose((1,2,0)))
