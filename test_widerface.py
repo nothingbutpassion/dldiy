@@ -170,23 +170,27 @@ def decode(image_size, feature, threshold=1.0):
                 boxes.append([x, y, w, h])
     return boxes
 
+def show_images(batch_x, batch_y, image_size=(256,256)):
+    batch_size = batch_x.shape[0]
+    for i in range(batch_size):
+        image = batch_x[i].transpose((1,2,0))
+        boxes = decode(image_size, batch_y[i])
+        ax = plt.subplot(1, batch_size, i + 1)
+        plt.tight_layout()
+        ax.set_title("Sample #{}".format(i))
+        ax.axis('off')
+        ax.imshow(image)
+        for box in boxes:
+            (x, y, w, h) = box[:4]
+            rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
+            ax.add_patch(rect)
+    plt.show()
+
 def test_data():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
     for batch_x, batch_y in DataIterator(train_data, (256, 256), (6,7,7), 4):
-        for i in range(4):
-            image = batch_x[i].transpose((1,2,0))
-            boxes = decode((256,256), batch_y[i])
-            ax = plt.subplot(1, 4, i + 1)
-            plt.tight_layout()
-            ax.set_title("Sample #{}".format(i))
-            ax.axis('off')
-            ax.imshow(image)
-            for bbox in boxes:
-                (x, y, w, h) = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
-                rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
-                ax.add_patch(rect)
-        plt.show()
+        show_images(batch_x, batch_y)
         break
 
 def test_codec():
@@ -199,8 +203,8 @@ def test_codec():
     boxes=decode(image.size, feature)
     ax = plt.subplot(1, 1, 1)
     ax.imshow(image)
-    for bbox in boxes:
-        (x, y, w, h) = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
+    for box in boxes:
+        (x, y, w, h) = box[:4]
         rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
         ax.add_patch(rect)
     plt.show()
@@ -225,14 +229,14 @@ def test_network():
     modle.summary()
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    epochs = 16
+    epochs = 4
     for i in range(epochs):
         for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,5,5), 100):
             modle.train_one_batch(batch_x, batch_y)
             result = modle.evaluate(batch_x, batch_y)
             print("Epoch %d %s" % (i+1, result))
     
-    for x_true, y_true in DataIterator(train_data, (128, 128), (6,3,3), 1):
+    for x_true, y_true in DataIterator(train_data, (128, 128), (6,5,5), 1):
         y_pred = modle.predict(x_true)[0]
         b1, b2 = y_pred[:2,:,:]
         exp_b1 = np.exp(b1)
