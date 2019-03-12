@@ -69,9 +69,11 @@ class Sequential(object):
                 self.train_one_batch(batch_x, batch_y)
                 _print_progress(j+1, steps, i+1)
 
-            # predict all train samples
-            train_sample_x = train_x[:1000]
-            train_sample_y = train_y[:1000]
+            # predict all train samples (random batch samples)
+            batch_indexes = np.arange(train_x.shape[0])
+            np.random.shuffle(batch_indexes)
+            train_sample_x = train_x[batch_indexes[:batch_size]]
+            train_sample_y = train_y[batch_indexes[:batch_size]]
             y_pred = self.predict(train_sample_x)
 
             # caculate training loss

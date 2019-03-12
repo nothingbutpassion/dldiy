@@ -249,4 +249,29 @@ class Flatten(Layer):
     def backward(self, dy):
         return dy.reshape(self.x_shape)
 
+class Reshape(Layer):
+    def __init__(self, output_shape, **args):
+        super(Reshape, self).__init__(**args)
+        if not self.name: 
+            self.name = "reshape"
+        self.output_shape = output_shape
+    
+    def build(self, input_shape):
+        assert(len(input_shape) > 1)
+        input_size = 1
+        output_size = 1
+        for i in range(1, len(input_shape)):
+            input_size *= input_shape[i]
+        for i in range(1, len(self.output_shape)):
+            output_size *= self.output_shape[i]
+        assert(input_size == output_size)
+        self.input_shape = input_shape
+
+    def forward(self, x):
+        self.input_shape = x.shape
+        return x.reshape((x.shape[0],) + self.output_shape[1:])
+
+    def backward(self, dy):
+        return dy.reshape(self.input_shape)
+
 

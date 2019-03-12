@@ -10,17 +10,25 @@ import optimizers
 import models
 
 def IOU(bx, by, bw, bh, tx, ty, tw, th):
-    bx1, bx2 = bx - bw/2, bx + bw/2
-    by1, by2 = by - bh/2, by + bh/2
     tx1, tx2 = tx - tw/2, tx + tw/2
     ty1, ty2 = ty - th/2, ty + th/2
+    bx1, bx2 = bx - bw/2, bx + bw/2
+    by1, by2 = by - bh/2, by + bh/2
     max_x1 = np.maximum(bx1, tx1)
     max_y1 = np.maximum(by1, ty1)
     min_x2 = np.minimum(bx2, tx2)
     min_y2 = np.minimum(by2, ty2)
-    intersection = (min_x2 - max_x1)*(min_y2 - max_y1)
-    union = bw*bw + tw*th - intersection
-    return intersection/union
+
+    mx, my, mw, mh = bx > 0, by > 0, bw > 0, bh > 0
+    mx21 = min_x2 > max_x1
+    my21 = min_y2 > max_y1
+    m = mx * my * mw * mh * mx21 * my21
+    iou = np.zeros_like(tx)
+    if np.sum(m) > 0:
+        I = (min_x2[m] - max_x1[m])*(min_y2[m] - max_y1[m])
+        U = bw[m]*bw[m] + tw[m]*th[m] - I
+        iou[m] = I/U
+    return np.average(iou)
     
 def detection_loss(y_true, y_pred):
     b1, b2, bx, by, bw, bh = y_pred
@@ -33,7 +41,7 @@ def detection_loss(y_true, y_pred):
     p2 = 1 - p1
     object_loss = -np.sum(t1*np.log(p1) + t2*np.log(p2))
     box_loss = np.sum((bx-tx)**2 + (by-ty)**2 + (bw-tw)**2 + (bh-th)**2)
-    return object_loss + box_loss
+    return 0.5*object_loss + 5*box_loss
 
 def detection_accuracy(y_true, y_pred):
     b1, b2, bx, by, bw, bh = y_pred
@@ -43,11 +51,17 @@ def detection_accuracy(y_true, y_pred):
     exp_b2 = np.exp(b2 - max_b)
     exp_s = exp_b1 + exp_b2
     p1 = exp_b1/exp_s
-    m = t1 > 0
-    iou = IOU(bx[m], by[m], bw[m], bh[m], tx[m], ty[m], tw[m], th[m])
-    iou = np.average(iou)
-    rt = np.sum(np.abs(p1 - t1))/t1.size
-    return rt*iou
+    p2 = 1 - p1
+    mp1 = p1 > 0.5
+    mt1 = t1 > 0
+    m1 = mp1 * mt1
+    iou = 0
+    if np.sum(m1) > 0:
+        iou = IOU(bx[m1], by[m1], bw[m1], bh[m1], tx[m1], ty[m1], tw[m1], th[m1])
+    mp2 = p2 > 0.5
+    mt2 = t2 > 0
+    m2 = mp2 * mt2
+    return iou * np.sum(m1)/np.sum(mt1) +   np.sum(mt1)/np.sum(mt2) * np.sum(m2)/np.sum(mt2)
 
 class DetectionLoss:
     def loss(self, y_true, y_pred):
@@ -63,6 +77,8 @@ class DetectionLoss:
     def grad(self, y_true, y_pred):
         batch_size = y_true.shape[0]
         batch_grad = np.zeros_like(y_pred)
+        r1 = 0.5
+        r2 = 5
         for i in range(batch_size):
             b1, b2, bx, by, bw, bh = y_pred[i]
             t1, t2, tx, ty, tw, th = y_true[i]
@@ -70,10 +86,14 @@ class DetectionLoss:
             exp_b1 = np.exp(b1 - max_b)
             exp_b2 = np.exp(b2 - max_b)
             exp_s = exp_b1 + exp_b2
+
             batch_grad[i] = [
-                (t2*exp_b1 - t1*exp_b2)/exp_s,
-                (t1*exp_b2 - t2*exp_b1)/exp_s,
-                bx-tx, by-ty, bw-tw, bh-th
+                r1*(t2*exp_b1 - t1*exp_b2)/exp_s,
+                r1*(t1*exp_b2 - t2*exp_b1)/exp_s,
+                r2*(bx-tx), 
+                r2*(by-ty), 
+                r2*(bw-tw), 
+                r2*(bh-th)
                 ]
         return batch_grad
     
@@ -187,21 +207,27 @@ def test_codec():
 
 def test_network():
     modle = models.Sequential()
-    modle.add(layers.Conv2D(16, (7, 7), stride=4, pad=0, input_shape=(None, 3, 128, 128))) 
-    modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((3, 3), stride=2))
-    modle.add(layers.Conv2D(32, (5, 5), stride=2, pad=0)) 
+
+    modle.add(layers.Conv2D(16, (7, 7), stride=4, pad=3, input_shape=(None, 3, 128, 128))) 
     modle.add(layers.ReLU())
     modle.add(layers.MaxPooling2D((2, 2), stride=2))
-    modle.add(layers.Conv2D(6, (1, 1), stride=1, pad=0)) 
-    # modle.compile(DetectionLoss(), optimizers.SGD(lr=0.001))
-    modle.compile(DetectionLoss(), optimizers.Momentum(lr=0.001))
+
+    modle.add(layers.Conv2D(32, (5, 5), stride=2, pad=2)) 
+    modle.add(layers.ReLU())
+    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+
+    modle.add(layers.Flatten())
+    modle.add(layers.Linear(6*5*5))
+    modle.add(layers.ReLU())
+    modle.add(layers.Reshape((None, 6, 5, 5)))
+   
+    modle.compile(DetectionLoss(), optimizers.SGD(lr=0.001))
     modle.summary()
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
     epochs = 16
     for i in range(epochs):
-        for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,3,3), 16):
+        for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,5,5), 100):
             modle.train_one_batch(batch_x, batch_y)
             result = modle.evaluate(batch_x, batch_y)
             print("Epoch %d %s" % (i+1, result))
@@ -223,9 +249,6 @@ def test_network():
                 ax.add_patch(rect)
             plt.show()
             return
-
-    
-
 
 
 if __name__ == "__main__":
