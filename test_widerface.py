@@ -40,8 +40,9 @@ def detection_loss(y_true, y_pred):
     p1 = exp_b1/exp_s
     p2 = 1 - p1
     object_loss = -np.sum(t1*np.log(p1) + t2*np.log(p2))
-    box_loss = np.sum((bx-tx)**2 + (by-ty)**2 + (bw-tw)**2 + (bh-th)**2)
-    return 0.5*object_loss + 2.0*box_loss
+    regression_loss = ((bx-tx)**2 + (by-ty)**2 + (bw-tw)**2 + (bh-th)**2)*(t1 > 0)
+    regression_loss = np.sum(regression_loss)
+    return 0.5*object_loss + 2.0*regression_loss
 
 def detection_accuracy(y_true, y_pred):
     b1, b2, bx, by, bw, bh = y_pred
@@ -61,7 +62,7 @@ def detection_accuracy(y_true, y_pred):
     mp2 = p2 > 0.5
     mt2 = t2 > 0
     m2 = mp2 * mt2
-    return iou * np.sum(m1)/np.sum(mt1) +   np.sum(mt1)/np.sum(mt2) * np.sum(m2)/np.sum(mt2)
+    return iou * np.sum(m1)/np.sum(mt1) +  np.sum(mt1)/np.sum(mt2) * np.sum(m2)/np.sum(mt2)
 
 class DetectionLoss:
     def loss(self, y_true, y_pred):
@@ -86,7 +87,7 @@ class DetectionLoss:
             exp_b1 = np.exp(b1 - max_b)
             exp_b2 = np.exp(b2 - max_b)
             exp_s = exp_b1 + exp_b2
-
+            mt = t1 > 0
             batch_grad[i] = [
                 r1*(t2*exp_b1 - t1*exp_b2)/exp_s,
                 r1*(t1*exp_b2 - t2*exp_b1)/exp_s,
@@ -95,6 +96,7 @@ class DetectionLoss:
                 r2*(bw-tw), 
                 r2*(bh-th)
                 ]
+            batch_grad[i] *= mt
         return batch_grad
     
 class DataIterator:
@@ -229,9 +231,9 @@ def test_network():
     modle.summary()
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    epochs = 4
+    epochs = 32
     for i in range(epochs):
-        for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,5,5), 100):
+        for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,5,5), 200):
             modle.train_one_batch(batch_x, batch_y)
             result = modle.evaluate(batch_x, batch_y)
             print("Epoch %d %s" % (i+1, result))
@@ -243,10 +245,10 @@ def test_network():
         exp_b2 = np.exp(b2)
         exp_s = exp_b1 + exp_b2
         y_pred[:2,:,:] = (exp_b1/exp_s, exp_b2/exp_s)
-        boxes = decode((128, 128), y_pred, 0.4)
+        boxes = decode((128, 128), y_pred, 0.7)
         if len(boxes) > 0:
             ax = plt.subplot(1, 1, 1)
-            ax.imshow(x_true[0].transpose((1,2,0)))
+            ax.imshow(x_true[0].transpose((1,2,0)*255+128))
             for bbox in boxes:
                 (x, y, w, h) = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
                 rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
