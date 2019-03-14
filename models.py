@@ -13,6 +13,7 @@ class Sequential(object):
         self.layers = {}
         self.params = {}
         self.grads = {}
+        self.loss = None
         self.metrics = None
         self.optimizer = None
 
@@ -27,7 +28,8 @@ class Sequential(object):
             print("%-20s%-20s%-20s" % (str(i+1)+" ("+ v.name +")" , str(v.input_shape), str(v.output_shape)))
         print("%s" % "-"*60)
 
-    def compile(self, metrics, optimizer):
+    def compile(self, loss, optimizer, metrics=[]):
+        self.loss = loss
         self.metrics = metrics
         self.optimizer = optimizer
         for i, layer in self.layers.items():
@@ -48,7 +50,7 @@ class Sequential(object):
         # backward propagation
         keys = list(self.layers.keys())
         keys.reverse()
-        grad = self.metrics.grad(batch_y, x)
+        grad = self.loss.grad(batch_y, x)
         for k in keys:
             grad = self.layers[k].backward(grad)
 
@@ -60,7 +62,11 @@ class Sequential(object):
         self.optimizer.update(self.params, self.grads)
 
     def train(self, train_x, train_y, batch_size, epochs=1, validation_data=None):
-        history = {"acc": [], "loss": [], "val_acc": [], "val_loss": [] }
+        history = {"loss": [], "val_loss": []}
+        for m in self.metrics:
+            history[m.__name__] = []
+            history["val_" + m.__name__] =[]
+
         steps = train_x.shape[0]//batch_size
         for j in range(epochs):
             for i in range(steps):
@@ -77,23 +83,25 @@ class Sequential(object):
             y_pred = self.predict(train_sample_x)
 
             # caculate training loss
-            loss = self.metrics.loss(train_sample_y, y_pred)
+            loss = self.loss.loss(train_sample_y, y_pred)
             history["loss"].append(loss)
 
-            # caculate training accuracy
-            acc = self.metrics.accuracy(train_sample_y, y_pred)
-            history["acc"].append(acc)
+            # caculate training metrics
+            metric = {}
+            for m in self.metrics:
+                history[m.__name__].append(m(train_sample_y, y_pred))
+                metric[m.__name__] = history[m.__name__][-1]
 
             # caculate validating loss & accuracy
             if validation_data:
                 val_x, val_y = validation_data
                 y_pred = self.predict(val_x)
-                val_loss = self.metrics.loss(val_y, y_pred)
-                val_acc = self.metrics.accuracy(val_y, y_pred)
+                val_loss = self.loss.loss(val_y, y_pred)
                 history["val_loss"].append(val_loss)
-                history["val_acc"].append(val_acc)
+                for m in self.metrics:
+                    history["val_" + m.__name__].append(m(val_y, y_pred))
             
-            print("Epoch: %-4s loss: %-20s acc: %-20s" % (str(j+1), str(loss), str(acc)))
+            print("Epoch: %-4s loss: %-20s metrics: %-20s" % (str(j+1), str(loss), str(metric)))
         
         return history
     
@@ -102,23 +110,12 @@ class Sequential(object):
             x = layer.forward(x)
         return x
 
-    def evaluate(self, x, y_true, metrics=["loss", "acc"]):
+    def evaluate(self, x, y_true):
         result = {}
-        if not metrics is None:
-            y_pred = self.predict(x)
-            if "loss" in metrics:
-                result["loss"] = self.metrics.loss(y_true, y_pred)
-            if "acc" in metrics:
-                result["acc"] = self.metrics.accuracy(y_true, y_pred)
-            return result
-    
-    def loss(self, x, y_true):
         y_pred = self.predict(x)
-        return self.metrics.loss(y_true, y_pred)
-
-    def accuracy(self, x, y_true):
-        y_pred = self.predict(x)
-        return self.metrics.accuracy(y_true, y_pred)
+        for m in self.metrics:
+            result[m.__name__] = m(y_true, y_pred)
+        return result
 
     
 
