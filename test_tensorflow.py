@@ -15,19 +15,18 @@ import datasets.widerface as widerface
 
 # NOTES:
 # custom generator must extends keras.utils.Sequence
+# output_size: W, H
+# feature_shape: H, W, C
 class DataGenerator(utils.Sequence):
     def __init__(self, data, output_size, feature_shape, batch_size):
         self.output_size = output_size
         self.feature_shape = feature_shape
         self.batch_size = batch_size
- 
-        data_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/train_data.npz"
-        if os.path.exists(data_file):
-            npz = np.load(data_file)
-            self.x, self.y = npz['x'], npz['y']
-            return
 
-        self.x = np.zeros((len(data), output_size[0], output_size[1], 3))
+        # NOTES
+        # self.x.shape: N, H, W, C
+        # self.y.shape: N, H, W, C
+        self.x = np.zeros((len(data), output_size[1], output_size[0], 3))
         self.y = np.zeros((len(data),) + feature_shape)
         # NOTES: 
         # consider data augmentation if possible
@@ -43,10 +42,7 @@ class DataGenerator(utils.Sequence):
                 box[2:] *= scale
             self.y[i] = encode(output_size, boxes, feature_shape)
             box_num += np.sum(self.y[i,:,:,0])
-            print("loaded sample=%d boxes=%d, total=%s" % (i, box_num, self.x.shape[0]))
-        
-        np.savez(data_file, x=self.x, y=self.y)
-        
+            print("loaded sample=%d boxes=%d, total=%s" % (i, box_num, self.x.shape[0])) 
 
     def __len__(self):
         batches = self.x.shape[0]//self.batch_size
@@ -73,7 +69,10 @@ def iou(box1, box2 = [0.5, 0.5, 1, 1]):
     U = w1*h1 + w2*h2 - I
     return I/U
 
-def encode(image_size, boxes, feature_shape=(7,7,5)):
+# NOTES:
+# image_size    = (width, height)
+# feature_shape = (height, width, channel)
+def encode(image_size, boxes, feature_shape):
     result = np.zeros(feature_shape)
     iw, ih = image_size
     oh, ow, oc = feature_shape
@@ -91,7 +90,7 @@ def encode(image_size, boxes, feature_shape=(7,7,5)):
             result[j,i,:]=(1, bx, by, bw, bh)
     return result
 
-def decode(image_size, feature, threshold=1.0):
+def decode(image_size, feature, threshold):
     boxes = []
     iw, ih = image_size
     oh, ow, oc = feature.shape
@@ -140,7 +139,7 @@ def test_codec():
     boxes = sample["boxes"]
     feature = encode(image.size, boxes, (7,7,5))
     print(feature)
-    boxes=decode(image.size, feature)
+    boxes=decode(image.size, feature, 1.0)
     draw_grids(image, (7,7))
     draw_boxes(image, boxes)
     plt.imshow(image)
@@ -149,12 +148,12 @@ def test_codec():
 def test_data():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    image_size = (256,256)
+    image_size = (300, 200)
     batch_size = 4
     feature_shape = (7,7,5)
     for batch_x, batch_y in DataGenerator(train_data, image_size, feature_shape, batch_size):
         for i in range(batch_size):
-            boxes = decode(image_size, batch_y[i])
+            boxes = decode(image_size, batch_y[i], 1.0)
             ax = plt.subplot(1, batch_size, i + 1)
             plt.tight_layout()
             ax.set_title("Sample %s" % i)
@@ -167,47 +166,60 @@ def test_data():
         plt.show()
         break
 
-if __name__ == "__main__":
+def build_model():
     model = models.Sequential()
-
-    model.add(layers.Conv2D(16, (3, 3), strides=(1,1), padding='valid', activation="relu", input_shape=(256, 256, 3)))
+    model.add(layers.Conv2D(16, (3, 3), strides=(1,1), activation="relu", input_shape=(256, 256, 3)))
     model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(3,3)))
-    
-    model.add(layers.Conv2D(32, (3, 3), strides=(1,1), padding='valid', activation="relu"))
+    model.add(layers.Conv2D(32, (3, 3), strides=(1,1), activation="relu"))
     model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(3,3)))
-    
-    model.add(layers.Conv2D(48, (3, 3), strides=(1,1), padding='valid', activation="relu"))
+    model.add(layers.Conv2D(48, (3, 3), strides=(1,1), activation="relu"))
     model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
-
-    model.add(layers.Conv2D(64, (3, 3), strides=(1,1), padding='valid', activation="relu"))
+    model.add(layers.Conv2D(64, (3, 3), strides=(1,1), activation="relu"))
     model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
-
     model.add(layers.Flatten())
     model.add(layers.Dense(7*7*5))
     model.add(layers.Reshape((7,7,5)))
-
     model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss)
     model.summary()
+    return model
 
+
+def test_model():
+    # build model
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model.h5"
+    model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
+    model.summary()
+    # model = build_model()
+
+    # load train data
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    generator = DataGenerator(train_data, (256, 256), (7,7,5), 4)
-    model.fit_generator(generator)
+    generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
+    # train model
+    model.fit_generator(generator, epochs=20)
+    models.save(model_file)
+
+    # predict sample
     batch_x, batch_y = generator[0]
+    batch_x, batch_y = batch_x[:11], batch_y[:11]
     y = model.predict(batch_x)
     for i in range(len(y)):
         boxes = decode((256, 256), y[i], 0.5)
-        ax = plt.subplot(1, 4, i + 1)
+        ax = plt.subplot(1, 11, i + 1)
         plt.tight_layout()
-        ax.set_title("Sample %s" % i)
+        ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
         for box in boxes:
             (x, y, w, h) = box[:4]
+            print("Sample %d, box=(%d,%d,%d,%d)", (i, x, y, w, h))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
-        plt.show()
+    plt.show()
+
+if __name__ == "__main__":
+    test_model()
 
 
     
