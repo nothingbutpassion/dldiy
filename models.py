@@ -117,6 +117,10 @@ class Sequential(object):
             result[m.__name__] = m(y_true, y_pred)
         return result
 
+    def compute_loss(self, x, y_true):
+        y_pred = self.predict(x)
+        return self.loss.loss(y_true, y_pred)
+
     
 
             

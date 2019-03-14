@@ -4,156 +4,112 @@ import datasets.widerface as widerface
 import PIL.Image as Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
 import layers
 import optimizers
 import models
 
-def IOU(bx, by, bw, bh, tx, ty, tw, th):
-    tx1, tx2 = tx - tw/2, tx + tw/2
-    ty1, ty2 = ty - th/2, ty + th/2
-    bx1, bx2 = bx - bw/2, bx + bw/2
-    by1, by2 = by - bh/2, by + bh/2
-    max_x1 = np.maximum(bx1, tx1)
-    max_y1 = np.maximum(by1, ty1)
-    min_x2 = np.minimum(bx2, tx2)
-    min_y2 = np.minimum(by2, ty2)
+def precision(y_true, y_pred): 
+    pass
 
-    mx, my, mw, mh = bx > 0, by > 0, bw > 0, bh > 0
-    mx21 = min_x2 > max_x1
-    my21 = min_y2 > max_y1
-    m = mx * my * mw * mh * mx21 * my21
-    iou = np.zeros_like(tx)
-    if np.sum(m) > 0:
-        I = (min_x2[m] - max_x1[m])*(min_y2[m] - max_y1[m])
-        U = bw[m]*bw[m] + tw[m]*th[m] - I
-        iou[m] = I/U
-    return np.average(iou)
-    
-def detection_loss(y_true, y_pred):
-    b1, b2, bx, by, bw, bh = y_pred
-    t1, t2, tx, ty, tw, th = y_true
-    max_b = np.maximum(b1, b2)
-    exp_b1 = np.exp(b1 - max_b)
-    exp_b2 = np.exp(b2 - max_b)
-    exp_s = exp_b1 + exp_b2
-    p1 = exp_b1/exp_s
-    p2 = 1 - p1
-    object_loss = -np.sum(t1*np.log(p1) + t2*np.log(p2))
-    regression_loss = ((bx-tx)**2 + (by-ty)**2 + (bw-tw)**2 + (bh-th)**2)*(t1 > 0)
-    regression_loss = np.sum(regression_loss)
-    return 0.5*object_loss + 2.0*regression_loss
+def recall(y_true, y_pred): 
+    pass
 
-def detection_accuracy(y_true, y_pred):
-    b1, b2, bx, by, bw, bh = y_pred
-    t1, t2, tx, ty, tw, th = y_true
-    max_b = np.maximum(b1, b2)
-    exp_b1 = np.exp(b1 - max_b)
-    exp_b2 = np.exp(b2 - max_b)
-    exp_s = exp_b1 + exp_b2
-    p1 = exp_b1/exp_s
-    p2 = 1 - p1
-    mp1 = p1 > 0.5
-    mt1 = t1 > 0
-    m1 = mp1 * mt1
-    iou = 0
-    if np.sum(m1) > 0:
-        iou = IOU(bx[m1], by[m1], bw[m1], bh[m1], tx[m1], ty[m1], tw[m1], th[m1])
-    mp2 = p2 > 0.5
-    mt2 = t2 > 0
-    m2 = mp2 * mt2
-    return iou * np.sum(m1)/np.sum(mt1) +  np.sum(mt1)/np.sum(mt2) * np.sum(m2)/np.sum(mt2)
-
-class DetectionLoss:
+class DetectLoss:
     def loss(self, y_true, y_pred):
-        batch_size = y_true.shape[0]
-        batch_loss = [detection_loss(y_true[i], y_pred[i]) for i in range(batch_size)]
-        return np.average(batch_loss)
-    
-    def accuracy(self, y_true, y_pred):
-        batch_size = y_true.shape[0]
-        batch_accuracy = [detection_accuracy(y_true[i], y_pred[i]) for i in range(batch_size)]
-        return np.average(batch_accuracy)
+        # y shape: (N, C, H, W)
+        p, x, y, w, h = [y_pred[:,i,:,:] for i in range(5)]
+        tp, tx, ty, tw, th = [y_true[:,i,:,:] for i in range(5)]
+        p = 1/(1+np.exp(-p))
+        obj_loss = - tp*np.log(p) - (1-tp)*np.log(1-p)
+        loc_loss = np.square(tx-x) + np.square(ty-y) + np.square(tw-w) + np.square(th-h)
+        m = tp > 0
+        loc_loss *= m
+        return np.mean(obj_loss) + np.sum(loc_loss)/np.sum(m)
 
     def grad(self, y_true, y_pred):
-        batch_size = y_true.shape[0]
+        p, x, y, w, h = [y_pred[:,i,:,:] for i in range(5)]
+        tp, tx, ty, tw, th = [y_true[:,i,:,:] for i in range(5)]
         batch_grad = np.zeros_like(y_pred)
-        r1 = 0.5
-        r2 = 2
-        for i in range(batch_size):
-            b1, b2, bx, by, bw, bh = y_pred[i]
-            t1, t2, tx, ty, tw, th = y_true[i]
-            max_b = np.maximum(b1, b2)
-            exp_b1 = np.exp(b1 - max_b)
-            exp_b2 = np.exp(b2 - max_b)
-            exp_s = exp_b1 + exp_b2
-            mt = t1 > 0
-            batch_grad[i] = [
-                r1*(t2*exp_b1 - t1*exp_b2)/exp_s,
-                r1*(t1*exp_b2 - t2*exp_b1)/exp_s,
-                r2*(bx-tx), 
-                r2*(by-ty), 
-                r2*(bw-tw), 
-                r2*(bh-th)
-                ]
-            batch_grad[i] *= mt
+        m = tp > 0
+        batch_grad[:,0,:,:] = -tp + 1/(1+np.exp(-p))
+        batch_grad[:,1,:,:] = (x - tx)*m
+        batch_grad[:,2,:,:] = (y - ty)*m
+        batch_grad[:,3,:,:] = (w - tw)*m
+        batch_grad[:,4,:,:] = (h - th)*m
         return batch_grad
     
 class DataIterator:
-    def __init__(self, data, output_size, feature_shape, batch_size):
+    def __init__(self, data, image_size, feature_shape, batch_size):
         self.data = data
-        self.output_size = output_size
+        self.image_size = image_size
         self.feature_shape = feature_shape
         self.batch_size = batch_size
     
     def __len__(self):
-        return len(self.data)//self.batch_size
+        steps = len(self.data)//self.batch_size
+        if len(self.data) % self.batch_size > 0:
+            steps += 1
+        return steps
     
     def __getitem__(self, batch_index):
-        if (self.batch_size+1)*batch_index > len(self.data):
+        start = self.batch_size*batch_index
+        if start >= len(self.data):
             raise IndexError()
-
-        batch_data = self.data[self.batch_size*batch_index : self.batch_size*(batch_index + 1)]
-        batch_x = np.zeros((self.batch_size, 3, self.output_size[0], self.output_size[1]), dtype='float32')
-        batch_y = np.zeros(((self.batch_size,) + self.feature_shape), dtype='float32')
+        end = min(start + self.batch_size, len(self.data))
+        batch_data = self.data[start : end]
+        # NOTES:
+        # image_size: W, H
+        # batch_x shape: N, 3, H, W
+        # batch_y shape: N, C, H, W
+        batch_x = np.zeros((self.batch_size, 3, self.image_size[1], self.image_size[0]))
+        batch_y = np.zeros(((self.batch_size,) + self.feature_shape))
         for i, sample in enumerate(batch_data):
             image = Image.open(sample["image"])
-            x_rate, y_rate = self.output_size[0]/image.size[0], self.output_size[1]/image.size[1]
-            image = image.resize(self.output_size, Image.BILINEAR)
-            image = np.asarray(image)
-            image = image.transpose((2, 0, 1))
-            batch_x[i, :, :, :] = (image - 128)/255
+            scale = np.array(self.image_size[:2])/np.array(image.size[:2])
+            image = image.resize(self.image_size, Image.BILINEAR)   # image_size： W, H
+            image = np.asarray(image)                               # numpy array shape: H, W, C
+            image = image.transpose((2, 0, 1))                      # after transposed: C, H, W
+            batch_x[i, :, :, :] = (image - 127.5)/255
             boxes = np.array(sample["boxes"])
             for box in boxes:
-                box[0] = box[0]*x_rate
-                box[2] = box[2]*x_rate
-                box[1] = box[1]*y_rate
-                box[3] = box[3]*y_rate
-            batch_y[i] = encode(self.output_size, boxes, self.feature_shape)
+                box[:2] *= scale
+                box[2:] *= scale
+            batch_y[i] = encode(self.image_size, boxes, self.feature_shape)
         return batch_x, batch_y
 
-def encode(image_size, boxes, feature_shape=(6,7,7)):
+
+def iou(box1, box2 = [0.5, 0.5, 1, 1]):
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
+    x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
+    max_x, max_y = np.maximum(x11, x21), np.maximum(y11, y21)
+    min_x, min_y = np.minimum(x12, x22), np.minimum(y12, y22)
+    assert(0 <= x1 and x1 < 1 and 0 <= y1 and y1 < 1 and w1 > 0 and h1 > 0)
+    assert(min_x > max_x and min_y > max_y)
+    I = (min_x - max_x)*(min_y - max_y)
+    U = w1*h1 + w2*h2 - I
+    return I/U
+
+# NOTES:
+# image_size    = (width, height)
+# feature_shape = (channel, height, width)
+def encode(image_size, boxes, feature_shape):
     result = np.zeros(feature_shape)
-    result[1,:,:] += 1
     iw, ih = image_size
     oc, oh, ow = feature_shape
     sh, sw = oh/ih, ow/iw
     for box in boxes:
         x, y, w, h = box
-        cx = sw*(x+w/2)
-        cy = sh*(y+h/2)
-        i = int(cx)
-        j = int(cy)    
-        bx = cx - i
-        by = cy - j
-        bw = sw*w
-        bh = sh*h
-        if result[0,j,i] > 0:
-            bw0, bh0 = result[4:,j,i]
-            if (bw*bh > bw0*bh0):
-                result[:,j,i]=(1, 0, bx, by, bw, bh)
+        cx, cy = sw*(x+w/2), sh*(y+h/2)
+        i, j = int(cx), int(cy)    
+        bx, by = cx-i, cy-j
+        bw, bh = sw*w, sh*h
+        if result[0,j,i] > 0 and iou([bx, by, bw, bh]) > iou(result[1:,j,i]):
+            # NOTES: select the bunding box that has biggest IOU with the grid
+            result[:,j,i]=(1, bx, by, bw, bh)
         else:
-            result[:,j,i]=(1, 0, bx, by, bw, bh)
+            result[:,j,i]=(1, bx, by, bw, bh)
     return result
 
 def decode(image_size, feature, threshold=1.0):
@@ -163,8 +119,8 @@ def decode(image_size, feature, threshold=1.0):
     sh, sw = ih/oh, iw/ow
     for j in range(oh):
         for i in range(ow):
-            po, pn, bx, by, bw, bh = feature[:,j,i]
-            if (po >= threshold):
+            p, bx, by, bw, bh = feature[:,j,i]
+            if (p >= threshold):
                 w = sw*bw
                 h = sh*bh
                 x = sw*(i + bx) - w/2
@@ -172,7 +128,7 @@ def decode(image_size, feature, threshold=1.0):
                 boxes.append([x, y, w, h])
     return boxes
 
-def show_images(batch_x, batch_y, image_size=(256,256)):
+def show_images(batch_x, batch_y, image_size):
     batch_size = batch_x.shape[0]
     for i in range(batch_size):
         image = batch_x[i].transpose((1,2,0))
@@ -191,71 +147,68 @@ def show_images(batch_x, batch_y, image_size=(256,256)):
 def test_data():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    for batch_x, batch_y in DataIterator(train_data, (256, 256), (6,7,7), 4):
-        show_images(batch_x, batch_y)
+    image_size = (512, 256)
+    feature_shape = (5, 7, 7)
+    batch_size = 4
+    for batch_x, batch_y in DataIterator(train_data, image_size, feature_shape, batch_size):
+        show_images(batch_x, batch_y, image_size)
         break
 
 def test_codec():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    sample = train_data[2]
+    sample = train_data[0]
     image = Image.open(sample["image"])
     boxes = sample["boxes"]
-    feature = encode(image.size, boxes)
+    feature = encode(image.size, boxes, (5,7,7))
+    print(feature)
     boxes=decode(image.size, feature)
     ax = plt.subplot(1, 1, 1)
-    ax.imshow(image)
+    plt.imshow(image)
     for box in boxes:
-        (x, y, w, h) = box[:4]
+        (x, y, w, h) = box
         rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
         ax.add_patch(rect)
     plt.show()
 
-def test_network():
+def test_model():
     modle = models.Sequential()
-
-    modle.add(layers.Conv2D(16, (7, 7), stride=4, pad=3, input_shape=(None, 3, 128, 128))) 
+    modle.add(layers.Conv2D(32, (7, 7), stride=4, pad=3, input_shape=(None, 3, 128, 128))) 
     modle.add(layers.ReLU())
     modle.add(layers.MaxPooling2D((2, 2), stride=2))
-
-    modle.add(layers.Conv2D(32, (5, 5), stride=2, pad=2)) 
+    modle.add(layers.Conv2D(64, (5, 5), stride=2, pad=2)) 
     modle.add(layers.ReLU())
     modle.add(layers.MaxPooling2D((2, 2), stride=2))
-
     modle.add(layers.Flatten())
-    modle.add(layers.Linear(6*5*5))
-    modle.add(layers.ReLU())
-    modle.add(layers.Reshape((None, 6, 5, 5)))
-   
-    modle.compile(DetectionLoss(), optimizers.SGD(lr=0.001))
+    modle.add(layers.Linear(5*5*5))
+    modle.add(layers.Reshape((None, 5, 5, 5)))
+    modle.compile(DetectLoss(), optimizers.SGD(lr=0.001))
     modle.summary()
+
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
     epochs = 32
+    generator = DataIterator(train_data, (128, 128), (5,5,5), 64)
     for i in range(epochs):
-        for batch_x, batch_y in DataIterator(train_data, (128, 128), (6,5,5), 200):
+        for j in range(len(generator)):
+            batch_x,batch_y = generator[j]
             modle.train_one_batch(batch_x, batch_y)
-            result = modle.evaluate(batch_x, batch_y)
-            print("Epoch %d %s" % (i+1, result))
-    
-    for x_true, y_true in DataIterator(train_data, (128, 128), (6,5,5), 1):
-        y_pred = modle.predict(x_true)[0]
-        b1, b2 = y_pred[:2,:,:]
-        exp_b1 = np.exp(b1)
-        exp_b2 = np.exp(b2)
-        exp_s = exp_b1 + exp_b2
-        y_pred[:2,:,:] = (exp_b1/exp_s, exp_b2/exp_s)
-        boxes = decode((128, 128), y_pred, 0.7)
-        if len(boxes) > 0:
-            ax = plt.subplot(1, 1, 1)
-            ax.imshow(x_true[0].transpose((1,2,0)*255+128))
-            for bbox in boxes:
-                (x, y, w, h) = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
-                rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
-                ax.add_patch(rect)
-            plt.show()
-            return
+            loss = modle.compute_loss(batch_x, batch_y)
+            print("Epoch=%d, step=%d/%d, loss=%f" % (i+1, j+1, len(generator), loss))
+
+    x_true, y_true = generator[0]
+    y_pred = modle.predict(x_true)
+    y_pred[:,0,:,:] = 1/(1+np.exp(-y_pred[:,0,:,:]))
+    boxes = decode((128, 128), y_pred[0], 0.5)
+    if len(boxes) > 0:
+        ax = plt.subplot(1, 1, 1)
+        ax.imshow(x_true[0].transpose((1,2,0)*255+128))
+        for bbox in boxes:
+            (x, y, w, h) = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
+            rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
+            ax.add_patch(rect)
+        plt.show()
 
 
 if __name__ == "__main__":
-    test_network()
+    test_model()

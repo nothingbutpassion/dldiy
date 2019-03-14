@@ -52,7 +52,7 @@ def test_mnist_with_cov2d():
     acc = losses.categorical_accuracy.__name__
     modle.compile(losses.CrossEntropy(), optimizers.SGD(lr=0.001), metrics=[losses.categorical_accuracy])
     modle.summary()
-    history = modle.train(train_x, train_y, batch_size, epochs=2, validation_data=(val_x, val_y))
+    history = modle.train(train_x, train_y, batch_size, epochs=32, validation_data=(val_x, val_y))
     epochs = range(1, len(history["loss"])+1)
     plt.plot(epochs, history["loss"], 'ro', label="Traning loss")
     plt.plot(epochs, history["val_loss"], 'go',label="Validating loss")

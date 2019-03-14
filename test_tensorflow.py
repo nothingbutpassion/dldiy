@@ -112,8 +112,9 @@ def detect_loss(y_true, y_pred):
     p = 1/(1+K.exp(-p))
     obj_loss = - tp*K.log(p) - (1-tp)*K.log(1-p)
     loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
-    loc_loss *= K.cast(tp > 0, dtype='float32')
-    return K.mean(obj_loss) + K.mean(loc_loss)
+    m = K.cast(tp > 0, dtype='float32')
+    loc_loss *= m
+    return K.mean(obj_loss) + K.sum(loc_loss)/K.sum(m)
     
 def draw_grids(image, grid_shape):
     d = ImageDraw.Draw(image)
@@ -197,23 +198,24 @@ def test_model():
     generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
     # train model
-    model.fit_generator(generator, epochs=20)
-    models.save(model_file)
+    model.fit_generator(generator, epochs=16)
+    model.save(model_file)
 
     # predict sample
     batch_x, batch_y = generator[0]
-    batch_x, batch_y = batch_x[:11], batch_y[:11]
-    y = model.predict(batch_x)
-    for i in range(len(y)):
-        boxes = decode((256, 256), y[i], 0.5)
-        ax = plt.subplot(1, 11, i + 1)
+    batch_x, batch_y = batch_x[:4], batch_y[:4]
+    y_pred = model.predict(batch_x)
+    y_pred[:,:,:,0] = 1/(1 + np.exp(-y_pred[:,:,:,0]))
+    for i in range(len(y_pred)):
+        boxes = decode((256, 256), y_pred[i], 0.22)
+        ax = plt.subplot(1, 4, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
         for box in boxes:
             (x, y, w, h) = box[:4]
-            print("Sample %d, box=(%d,%d,%d,%d)", (i, x, y, w, h))
+            print("Sample %d, box=(%d,%d,%d,%d)" % (i, x, y, w, h))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
     plt.show()
