@@ -103,18 +103,18 @@ def decode(image_size, feature, threshold):
                 h = sh*bh
                 x = sw*(i + bx) - w/2
                 y = sh*(j + by) - h/2
-                boxes.append([x, y, w, h])
+                boxes.append([x, y, w, h, p])
     return boxes
 
 def detect_loss(y_true, y_pred):
     p, x, y, w, h = [y_pred[:,:,:,i] for i in range(5)]
     tp, tx, ty, tw, th = [y_true[:,:,:,i] for i in range(5)]
     p = 1/(1+K.exp(-p))
-    obj_loss = - tp*K.log(p) - (1-tp)*K.log(1-p)
+    obj_loss = - 5*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
     loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
     m = K.cast(tp > 0, dtype='float32')
     loc_loss *= m
-    return K.mean(obj_loss) + K.sum(loc_loss)/K.sum(m)
+    return K.mean(obj_loss) + 5*K.mean(loc_loss)
     
 def draw_grids(image, grid_shape):
     d = ImageDraw.Draw(image)
@@ -198,8 +198,8 @@ def test_model():
     generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
     # train model
-    model.fit_generator(generator, epochs=16)
-    model.save(model_file)
+    # model.fit_generator(generator, epochs=15)
+    # model.save(model_file)
 
     # predict sample
     batch_x, batch_y = generator[0]
@@ -207,15 +207,15 @@ def test_model():
     y_pred = model.predict(batch_x)
     y_pred[:,:,:,0] = 1/(1 + np.exp(-y_pred[:,:,:,0]))
     for i in range(len(y_pred)):
-        boxes = decode((256, 256), y_pred[i], 0.22)
+        boxes = decode((256, 256), y_pred[i], 0.75)
         ax = plt.subplot(1, 4, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
         for box in boxes:
-            (x, y, w, h) = box[:4]
-            print("Sample %d, box=(%d,%d,%d,%d)" % (i, x, y, w, h))
+            (x, y, w, h, p) = box
+            print("Sample %d, box=(%d,%d,%d,%d), score=%f" % (i, x, y, w, h, p))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
     plt.show()
