@@ -112,7 +112,7 @@ def detect_loss(y_true, y_pred):
     # NOTES: 
     # p, x, y should be: (0, 1)
     # w, h    should be: (0, S), where S X S is the grid num 
-    p =  1/(1+K.exp(-p))
+    p = 1/(1+K.exp(-p))
     x = 1/(1+K.exp(-x))
     y = 1/(1+K.exp(-y))
     w = 7/(1+K.exp(-w))
@@ -122,7 +122,24 @@ def detect_loss(y_true, y_pred):
     m = K.cast(tp > 0, dtype='float32')
     loc_loss *= m
     return K.mean(obj_loss) + 5*K.mean(loc_loss)
-    
+
+def f1_score(y_true, y_pred):
+    p = 1/(1 + K.exp(-y_pred[:,:,:,0]))
+    tp = y_true[:,:,:,0]
+    # NOTES:
+    # Precision = TP/(TP + FP)
+    # Recall = TP/(TP + FN)
+    # F1 Score = 2*(Recall * Precision) / (Recall + Precision)
+    P = K.cast(p > 0.5, dtype='float32')
+    F = K.cast(p <= 0.5, dtype='float32')
+    TP = K.cast(tp > 0.5, dtype='float32')*P
+    FN = K.cast(tp > 0.5, dtype='float32')*F
+    Precision = K.sum(TP)/K.sum(P)
+    Recall = K.sum(TP)/(K.sum(TP) + K.sum(FN))
+    F1 = 2*(Recall*Precision)/(Recall + Precision)
+    return F1
+
+
 def draw_grids(image, grid_shape):
     d = ImageDraw.Draw(image)
     gw, gh = grid_shape
@@ -187,14 +204,14 @@ def build_model():
     model.add(layers.Flatten())
     model.add(layers.Dense(7*7*5))
     model.add(layers.Reshape((7,7,5)))
-    model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss)
+    model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss, metrics=[f1_score])
     model.summary()
     return model
 
 
 def test_model():
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_"
     # model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
     # model.summary()
     model = build_model()
@@ -205,8 +222,9 @@ def test_model():
     generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
     # train model
-    model.fit_generator(generator, epochs=15)
-    model.save(model_file)
+    for i in range(111):
+        model.fit_generator(generator, epochs=111)
+        model.save(model_file + str(i) + ".h5")
 
     # predict sample
     batch_x, batch_y = generator[0]
