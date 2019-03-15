@@ -109,7 +109,14 @@ def decode(image_size, feature, threshold):
 def detect_loss(y_true, y_pred):
     p, x, y, w, h = [y_pred[:,:,:,i] for i in range(5)]
     tp, tx, ty, tw, th = [y_true[:,:,:,i] for i in range(5)]
-    p = 1/(1+K.exp(-p))
+    # NOTES: 
+    # p, x, y should be: (0, 1)
+    # w, h    should be: (0, S), where S X S is the grid num 
+    p =  1/(1+K.exp(-p))
+    x = 1/(1+K.exp(-x))
+    y = 1/(1+K.exp(-y))
+    w = 7/(1+K.exp(-w))
+    h = 7/(1+K.exp(-h))
     obj_loss = - 5*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
     loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
     m = K.cast(tp > 0, dtype='float32')
@@ -188,24 +195,25 @@ def build_model():
 def test_model():
     # build model
     model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model.h5"
-    model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
-    model.summary()
-    # model = build_model()
-
+    # model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
+    # model.summary()
+    model = build_model()
+    
     # load train data
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
     generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
     # train model
-    # model.fit_generator(generator, epochs=15)
-    # model.save(model_file)
+    model.fit_generator(generator, epochs=15)
+    model.save(model_file)
 
     # predict sample
     batch_x, batch_y = generator[0]
     batch_x, batch_y = batch_x[:4], batch_y[:4]
     y_pred = model.predict(batch_x)
-    y_pred[:,:,:,0] = 1/(1 + np.exp(-y_pred[:,:,:,0]))
+    y_pred[:,:,:,:3] = 1/(1 + np.exp(-y_pred[:,:,:,:3]))
+    y_pred[:,:,:,3:] = 7/(1 + np.exp(-y_pred[:,:,:,3:]))
     for i in range(len(y_pred)):
         boxes = decode((256, 256), y_pred[i], 0.75)
         ax = plt.subplot(1, 4, i + 1)
