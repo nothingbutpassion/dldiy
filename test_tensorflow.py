@@ -1,17 +1,17 @@
-from PIL import Image, ImageDraw
-from tensorflow.keras import models
-from tensorflow.keras import layers
-from tensorflow.keras import optimizers
-from tensorflow.keras import losses
-from tensorflow.keras import utils
-from tensorflow.keras import backend as K
-import tensorflow as tf
+
 import os
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import datasets.widerface as widerface
+from PIL import Image, ImageDraw
+from tensorflow import keras
+models = keras.models
+layers = keras.layers
+optimizers = keras.optimizers
+utils = keras.utils
+K = keras.backend
 
 # NOTES:
 # custom generator must extends keras.utils.Sequence
@@ -33,7 +33,7 @@ class DataGenerator(utils.Sequence):
         box_num = 0
         for i, sample in enumerate(data):
             image = Image.open(sample["image"])
-            scale = np.array(output_size[:2])/np.array(image.size[:2])
+            scale = np.array(output_size[:2], dtype='float')/np.array(image.size[:2])
             image = np.array(image.resize(output_size, Image.BICUBIC))
             self.x[i] = (image - 127.5)/255
             boxes = np.array(sample["boxes"])
@@ -57,7 +57,7 @@ class DataGenerator(utils.Sequence):
         end_index = min(start_index + self.batch_size, self.x.shape[0])
         return self.x[start_index:end_index], self.y[start_index:end_index]
 
-def iou(box1, box2 = [0.5, 0.5, 1, 1]):
+def iou(box1, box2 = [0.5, 0.5, 1.0, 1.0]):
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
@@ -76,7 +76,7 @@ def encode(image_size, boxes, feature_shape):
     result = np.zeros(feature_shape)
     iw, ih = image_size
     oh, ow, oc = feature_shape
-    sh, sw = oh/ih, ow/iw
+    sh, sw = float(oh)/ih, float(ow)/iw
     for box in boxes:
         x, y, w, h = box
         cx, cy = sw*(x+w/2), sh*(y+h/2)
@@ -94,7 +94,7 @@ def decode(image_size, feature, threshold):
     boxes = []
     iw, ih = image_size
     oh, ow, oc = feature.shape
-    sh, sw = ih/oh, iw/ow
+    sh, sw = float(ih)/oh, float(iw)/ow
     for j in range(oh):
         for i in range(ow):
             p, bx, by, bw, bh = feature[j,i,:]
@@ -154,7 +154,8 @@ def draw_boxes(image, boxes):
     d = ImageDraw.Draw(image)
     for box in boxes:
         (x, y, w, h) = box[:4]
-        d.rectangle([x,y,x+w,y+h], outline=(255,0,0), width=4)
+        d.rectangle([x,y,x+w,y+h], outline=(255,0,0))
+        d.rectangle([x+1,y+1,x+w-1,y+h-1], outline=(255,0,0))
 
 def test_codec():
     train_data = widerface.load_data()
@@ -173,7 +174,7 @@ def test_codec():
 def test_data():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    image_size = (300, 200)
+    image_size = (200, 200)
     batch_size = 4
     feature_shape = (7,7,5)
     for batch_x, batch_y in DataGenerator(train_data, image_size, feature_shape, batch_size):
@@ -205,7 +206,6 @@ def build_model():
     model.add(layers.Dense(7*7*5))
     model.add(layers.Reshape((7,7,5)))
     model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss, metrics=[f1_score])
-    model.summary()
     return model
 
 
@@ -213,8 +213,8 @@ def test_model():
     # build model
     model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_"
     # model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
-    # model.summary()
     model = build_model()
+    model.summary()
     
     # load train data
     train_data = widerface.load_data()
@@ -247,7 +247,7 @@ def test_model():
     plt.show()
 
 if __name__ == "__main__":
-    test_model()
+    test_data()
 
 
     
