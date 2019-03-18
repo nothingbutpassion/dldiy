@@ -5,65 +5,99 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import datasets.widerface as widerface
-from PIL import Image, ImageDraw
-from tensorflow import keras
-models = keras.models
-layers = keras.layers
-optimizers = keras.optimizers
-utils = keras.utils
-K = keras.backend
+import preprocessing.imgkit as imgkit
+import PIL.Image as Image
+import tensorflow
+models = tensorflow.keras.models
+layers = tensorflow.keras.layers
+optimizers = tensorflow.keras.optimizers
+utils = tensorflow.keras.utils
+K = tensorflow.keras.backend
 
+
+def transform(image, boxes, output_size):
+    iw, ih = image.size
+    ow, oh = output_size
+    # image size is smaller than output size
+    if iw < ow or ih < oh:
+        return imgkit.resize(image, output_size, boxes)
+
+    # find the biggest box, try crop based on the center of the biggest box
+    area = np.array([b[2]*b[3] for b in boxes])
+    x, y, w, h = boxes[np.argmax(area)]
+
+    # the box size is greater than output size
+    # try crop a random rect with about 4-times of the biggest box' size
+    if w > ow or h > oh:
+        r = 3*max(w, h)*np.random.rand()
+        x1 = max(x-r, 0)
+        y1 = max(y-r, 0)
+        x2 = min(x+w+r, iw)
+        y2 = min(y+h+r, ih)
+        selected = np.array([b for b in boxes if b[0] >= x1 and b[1] >= y1 and b[0]+b[2] <= x2 and b[1]+b[3] <= y2])
+        assert(selected.shape[0] > 0)
+        image, boxes = imgkit.crop(image, [x1,y1,x2,y2], selected)
+        return imgkit.resize(image, output_size, boxes)
+
+    # try crop a rect with output size
+    rx = (ow - w)*np.random.rand()
+    ry = (oh - h)*np.random.rand()
+    x1 = max(x - rx, 0)
+    y1 = max(y - ry, 0)
+    x2 = min(x1 + ow, iw)
+    y2 = min(y1 + oh, ih)
+    selected = np.array([b for b in boxes if b[0] >= x1 and b[1] >= y1 and b[0]+b[2] <= x2 and b[1]+b[3] <= y2])
+    assert(selected.shape[0] > 0)
+    image, boxes = imgkit.crop(image, [x1,y1,x2,y2], selected)
+    return imgkit.resize(image, output_size, boxes)
+
+    
 # NOTES:
 # custom generator must extends keras.utils.Sequence
 # output_size: W, H
 # feature_shape: H, W, C
 class DataGenerator(utils.Sequence):
     def __init__(self, data, output_size, feature_shape, batch_size):
+        self.data = data
         self.output_size = output_size
         self.feature_shape = feature_shape
         self.batch_size = batch_size
 
-        # NOTES
-        # self.x.shape: N, H, W, C
-        # self.y.shape: N, H, W, C
-        self.x = np.zeros((len(data), output_size[1], output_size[0], 3))
-        self.y = np.zeros((len(data),) + feature_shape)
-        # NOTES: 
-        # consider data augmentation if possible
-        box_num = 0
-        for i, sample in enumerate(data):
-            image = Image.open(sample["image"])
-            scale = np.array(output_size[:2], dtype='float')/np.array(image.size[:2])
-            image = np.array(image.resize(output_size, Image.BICUBIC))
-            self.x[i] = (image - 127.5)/255
-            boxes = np.array(sample["boxes"])
-            for box in boxes:
-                box[:2] *= scale
-                box[2:] *= scale
-            self.y[i] = encode(output_size, boxes, feature_shape)
-            box_num += np.sum(self.y[i,:,:,0])
-            print("loaded sample=%d boxes=%d, total=%s" % (i, box_num, self.x.shape[0])) 
-
     def __len__(self):
-        batches = self.x.shape[0]//self.batch_size
-        if self.x.shape[0] % self.batch_size > 0:
+        samples = len(self.data)
+        batches = samples//self.batch_size
+        if samples % self.batch_size > 0:
             batches += 1
         return batches
     
     def __getitem__(self, batch_index):
         start_index = self.batch_size*batch_index
-        if start_index >= self.x.shape[0]:
+        if start_index >= len(self.data):
             raise IndexError()
-        end_index = min(start_index + self.batch_size, self.x.shape[0])
-        return self.x[start_index:end_index], self.y[start_index:end_index]
+        end_index = min(start_index + self.batch_size, len(self.data))
+        # NOTES
+        # self.x.shape: N, H, W, C
+        # self.y.shape: N, H, W, C
+        batch_size = end_index - start_index
+        batch_x = np.zeros((batch_size, self.output_size[1], self.output_size[0], 3))
+        batch_y = np.zeros((batch_size,) + self.feature_shape)
+        for i in range(start_index, end_index):
+            sample = self.data[i]
+            image = Image.open(sample["image"])
+            boxes = np.array(sample["boxes"])
+            image, boxes = transform(image, boxes, self.output_size)
+            batch_x[i-start_index] = (np.array(image) - 127.5)/255
+            batch_y[i-start_index] = encode(self.output_size, boxes, self.feature_shape)
+            # print("loaded sample=%d, total=%d" % (i, len(self.data))) 
+        return batch_x, batch_y
 
 def iou(box1, box2 = [0.5, 0.5, 1.0, 1.0]):
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
     x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
-    max_x, max_y = np.maximum(x11, x21), np.maximum(y11, y21)
-    min_x, min_y = np.minimum(x12, x22), np.minimum(y12, y22)
+    max_x, max_y = max(x11, x21), max(y11, y21)
+    min_x, min_y = max(x12, x22), max(y12, y22)
     assert(min_x > max_x and min_y > max_y)
     I = (min_x - max_x)*(min_y - max_y)
     U = w1*h1 + w2*h2 - I
@@ -117,11 +151,11 @@ def detect_loss(y_true, y_pred):
     y = 1/(1+K.exp(-y))
     w = 7/(1+K.exp(-w))
     h = 7/(1+K.exp(-h))
-    obj_loss = - 5*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
+    obj_loss = - 10*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
     loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
     m = K.cast(tp > 0, dtype='float32')
     loc_loss *= m
-    return K.mean(obj_loss) + 5*K.mean(loc_loss)
+    return K.mean(obj_loss) + 10*K.mean(loc_loss)
 
 def f1_score(y_true, y_pred):
     p = 1/(1 + K.exp(-y_pred[:,:,:,0]))
@@ -139,37 +173,20 @@ def f1_score(y_true, y_pred):
     F1 = 2*(Recall*Precision)/(Recall + Precision)
     return F1
 
-
-def draw_grids(image, grid_shape):
-    d = ImageDraw.Draw(image)
-    gw, gh = grid_shape
-    w, h = image.size[0], image.size[1]
-    rw, rh = w/gw, h/gh
-    for j in range(gh):
-        d.line([1, j*rh, w-1, j*rh], fill=(255,0,0), width=4)
-    for i in range(gw):
-        d.line([i*rw, 1, i*rw, h-1], fill=(255,0,0), width=4)
-
-def draw_boxes(image, boxes):
-    d = ImageDraw.Draw(image)
-    for box in boxes:
-        (x, y, w, h) = box[:4]
-        d.rectangle([x,y,x+w,y+h], outline=(255,0,0))
-        d.rectangle([x+1,y+1,x+w-1,y+h-1], outline=(255,0,0))
-
 def test_codec():
     train_data = widerface.load_data()
-    train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    sample = train_data[2]
-    image = Image.open(sample["image"])
-    boxes = sample["boxes"]
-    feature = encode(image.size, boxes, (7,7,5))
-    print(feature)
-    boxes=decode(image.size, feature, 1.0)
-    draw_grids(image, (7,7))
-    draw_boxes(image, boxes)
-    plt.imshow(image)
-    plt.show()
+    train_data = widerface.select(train_data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
+    for sample in train_data:
+        image = Image.open(sample["image"])
+        boxes = np.array(sample["boxes"])
+        image, boxes = transform(image, boxes, (256, 256))
+        feature = encode(image.size, boxes, (7,7,5))
+        print(feature)
+        boxes=decode(image.size, feature, 1.0)
+        imgkit.draw_grids(image, (7,7))
+        imgkit.draw_boxes(image, boxes, color=(0,255,0))
+        plt.imshow(image)
+        plt.show()
 
 def test_data():
     train_data = widerface.load_data()
@@ -211,9 +228,9 @@ def build_model():
 
 def test_model():
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_"
-    # model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss})
-    model = build_model()
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model.h5"
+    model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss, "f1_score":f1_score})
+    #model = build_model()
     model.summary()
     
     # load train data
@@ -223,8 +240,8 @@ def test_model():
 
     # train model
     for i in range(111):
-        model.fit_generator(generator, epochs=111)
-        model.save(model_file + str(i) + ".h5")
+        model.fit_generator(generator, epochs=10)
+        model.save(model_file + "_" + str(i+1) + ".h5")
 
     # predict sample
     batch_x, batch_y = generator[0]
@@ -234,7 +251,7 @@ def test_model():
     y_pred[:,:,:,3:] = 7/(1 + np.exp(-y_pred[:,:,:,3:]))
     for i in range(len(y_pred)):
         boxes = decode((256, 256), y_pred[i], 0.75)
-        ax = plt.subplot(1, 4, i + 1)
+        ax = plt.subplot(2, 2, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
         ax.axis('off')
@@ -247,7 +264,7 @@ def test_model():
     plt.show()
 
 if __name__ == "__main__":
-    test_data()
+    test_model()
 
 
     

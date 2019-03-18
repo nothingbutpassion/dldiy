@@ -55,7 +55,7 @@ def init_data(root):
         pickle.dump(dataset, f, -1)
     print("saved as " + save_file) 
 
-def select(data, blur=None, expression=None, illumination=None, invalid=None, occlusion=None, pose=None):
+def select(data, blur=None, expression=None, illumination=None, invalid=None, occlusion=None, pose=None, min_size=12):
     """Attached the mappings between attribute names and label values.
     blur:
     clear->0
@@ -98,12 +98,16 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
             requirements = [blur, expression, illumination, invalid, occlusion, pose]
             passed = True
             for i in range(len(attributes)):
-                if requirements[i] and attributes[i] != requirements[i]:
+                if requirements[i] and not (attributes[i] in requirements[i]):
                     passed = False
                     break
+            # NOTES:
+            # some box' w, h is 0 (or too small), should exclude
+            if box[2] < min_size or box[3] < min_size:
+                passed = False 
             if passed:
                 bboxes.append(box)
-        if len(bboxes) > 0 and len(bboxes) == len(sample["boxes"]) :
+        if len(bboxes) > 0:
             result.append({"image": image, "boxes": bboxes})
     return result
 

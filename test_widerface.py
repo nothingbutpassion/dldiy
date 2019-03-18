@@ -63,7 +63,7 @@ def crop(image, boxes, rect):
 def resize(image, boxes, size):
     sx = float(size[0])/image.size[0] 
     sy = float(size[1])/image.size[1] 
-    image = image.resize(size, Image.BICUBIC)
+    image = image.resize(size, Image.LINEAR)
     boxes[:,:2] *= (sx, sy)
     boxes[:,2:] *= (sx, sy)
     return image, boxes
@@ -73,14 +73,39 @@ def transform(image, boxes, output_size):
     ow, oh = output_size
     if iw < ow or ih < oh:
         return resize(image, boxes, output_size)
-    x1 = int((iw-ow)*np.random.rand())
-    y1 = int((ih-oh)*np.random.rand())
-    while not is_crop_valid(boxes, (x1,y1,x1+ow,y1+oh)):
-        x1 = int((iw-ow)*np.random.rand())
-        y1 = int((ih-oh)*np.random.rand())
-    image, boxes = crop(image, boxes, (x1,y1,x1+ow,y1+oh))
-    boxes = np.array([b for b in boxes if b[0] > 0 and b[1] > 0])
-    return image, boxes
+    # find the biggest box
+    area = np.array([b[2]*b[3] for b in boxes])
+    x, y, w, h = boxes[np.argmax(area)]
+    x1 = max(x+w/2-ow/2, 0)
+    y1 = max(y+h/2-oh/2, 0)
+    x2 = min(x+w/2+ow/2, iw)
+    y2 = min(y+h/2+oh/2, ih)
+    selected = np.array([b for b in boxes if b[0] > x1 and b[1] > y1 and b[0]+b[2] < x2 and b[1]+b[3] < y2])
+    if len(selected) > 0:
+        image, boxes = crop(image, selected, [x1,y1,x2,y2])
+        return resize(image, boxes, output_size)
+
+    if x1 == 0:
+        x2 = ow
+    if x2 == iw:
+        x1 = iw - ow
+    if y1 == 0:
+        y2 = oh
+    if y2 == ih:
+        y1 = ih - oh 
+    selected = np.array([b for b in boxes if b[0] > x1 and b[1] > y1 and b[0]+b[2] < x2 and b[1]+b[3] < y2])
+    if len(selected) > 0:
+        image, boxes = crop(image, selected, [x1,y1,x2,y2])
+        return resize(image, boxes, output_size)
+
+    s = max(w, h)
+    x1 = max(x+w/2-3*s, 0)
+    y1 = max(y+h/2-3*s, 0)
+    x2 = min(x+w/2+3*s, iw)
+    y2 = min(y+h/2+3*s, ih)
+    selected = np.array([b for b in boxes if b[0] >= x1 and b[1] >= y1 and b[0]+b[2] <= x2 and b[1]+b[3] <= y2])
+    image, boxes = crop(image, selected, [x1,y1,x2,y2])
+    return resize(image, boxes, output_size)
 
 class DataIterator:
     def __init__(self, data, image_size, feature_shape, batch_size):
@@ -208,9 +233,9 @@ def draw_grids(image, grid_shape):
     w, h = image.size[0], image.size[1]
     rw, rh = w/gw, h/gh
     for j in range(gh):
-        d.line([1, j*rh, w-1, j*rh], fill=(255,0,0), width=4)
+        d.line([1, j*rh, w-1, j*rh], fill=(255,0,0), width=2)
     for i in range(gw):
-        d.line([i*rw, 1, i*rw, h-1], fill=(255,0,0), width=4)
+        d.line([i*rw, 1, i*rw, h-1], fill=(255,0,0), width=2)
 
 def draw_boxes(image, boxes):
     d = ImageDraw.Draw(image)
@@ -235,15 +260,15 @@ def test_codec():
 
 def test_transform():
     train_data = widerface.load_data()
-    train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    sample = train_data[2]
-    image = Image.open(sample["image"])
-    boxes = np.array(sample["boxes"])
-    image, boxes = transform(image, boxes, (128, 128))
-    # draw_grids(image, (7,7))
-    draw_boxes(image, boxes)
-    plt.imshow(image)
-    plt.show(block=True)
+    train_data = widerface.select(train_data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=16)
+    for sample in train_data:
+        image = Image.open(sample["image"])
+        boxes = np.array(sample["boxes"])
+        image, boxes = transform(image, boxes, (128, 128))
+        # draw_grids(image, (7,7))
+        draw_boxes(image, boxes)
+        plt.imshow(image)
+        plt.show(block=True)
 
 def test_model():
     modle = models.Sequential()
