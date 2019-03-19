@@ -21,12 +21,15 @@ class Sequential(object):
         self.layers[len(self.layers)] = layer
 
     def summary(self):
-        print("%s" % "-"*60)
-        print("%-20s%-20s%-20s" % ('Layer (Name)','Input Shape','Output Shape'))
-        print("%s" % "-"*60)
+        print("%s" % "-"*80)
+        print("%-20s%-20s%-25s%-20s" % ('Layer (Name)','Input Shape','Output Shape', 'Param #'))
+        print("%s" % "-"*80)
         for i,v in self.layers.items():
-            print("%-20s%-20s%-20s" % (str(i+1)+" ("+ v.name +")" , str(v.input_shape), str(v.output_shape)))
-        print("%s" % "-"*60)
+            params=0
+            if hasattr(v, "W") and hasattr(v, "b"):
+                params = v.W.size + v.b.size
+            print("%-20s%-20s%-25s%-20s" % (str(i+1)+" ("+ v.name +")" , str(v.input_shape), str(v.output_shape), str(params)))
+        print("%s" % "-"*80)
 
     def compile(self, loss, optimizer, metrics=[]):
         self.loss = loss

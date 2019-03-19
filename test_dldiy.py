@@ -45,7 +45,7 @@ def test_mnist_with_cov2d():
     modle = models.Sequential()
     modle.add(layers.Conv2D(4, (3, 3), stride=1, pad=1, input_shape=(None, 1, 28, 28))) 
     modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+    modle.add(layers.MaxPool2D((2, 2), stride=2))
     modle.add(layers.Flatten())
     modle.add(layers.Linear(10))
     modle.add(layers.Softmax())

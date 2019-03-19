@@ -8,6 +8,7 @@ import matplotlib.patches as patches
 import layers
 import optimizers
 import models
+import preprocessing.imgkit as imgkit
 
 def f1_score(y_true, y_pred):
     p = 1/(1 + np.exp(-y_pred[:,0,:,:]))
@@ -39,9 +40,9 @@ class DetectLoss:
     def grad(self, y_true, y_pred):
         p, x, y, w, h = [y_pred[:,i,:,:] for i in range(5)]
         tp, tx, ty, tw, th = [y_true[:,i,:,:] for i in range(5)]
-        batch_grad = np.zeros_like(y_pred)
         m = tp > 0
         epsilon = 1e-7
+        batch_grad = np.zeros_like(y_pred)
         batch_grad[:,0,:,:] = -tp/(p + epsilon) + (1-tp)/(1-p + epsilon)
         batch_grad[:,1,:,:] = (x - tx)*m
         batch_grad[:,2,:,:] = (y - ty)*m
@@ -49,101 +50,72 @@ class DetectLoss:
         batch_grad[:,4,:,:] = (h - th)*m
         return batch_grad
 
-def is_crop_valid(boxes, rect):
-    d = boxes - rect
-    xy_valid = (d[:,0] > 0)*(d[:,1] > 0)
-    wh_valid = (d[:,0] + d[:,2] < 0)*(d[:,1] + d[:,3] < 0)
-    return  np.sum(xy_valid*wh_valid)
-
-def crop(image, boxes, rect):
-    image = image.crop(rect)
-    boxes[:,:2] -= rect[:2]
-    return image, boxes
-
-def resize(image, boxes, size):
-    sx = float(size[0])/image.size[0] 
-    sy = float(size[1])/image.size[1] 
-    image = image.resize(size, Image.LINEAR)
-    boxes[:,:2] *= (sx, sy)
-    boxes[:,2:] *= (sx, sy)
-    return image, boxes
-
 def transform(image, boxes, output_size):
     iw, ih = image.size
     ow, oh = output_size
+    # image size is smaller than output size
     if iw < ow or ih < oh:
-        return resize(image, boxes, output_size)
-    # find the biggest box
+        return imgkit.resize(image, output_size, boxes)
+
+    # find the biggest box, try crop based on the center of the biggest box
     area = np.array([b[2]*b[3] for b in boxes])
     x, y, w, h = boxes[np.argmax(area)]
-    x1 = max(x+w/2-ow/2, 0)
-    y1 = max(y+h/2-oh/2, 0)
-    x2 = min(x+w/2+ow/2, iw)
-    y2 = min(y+h/2+oh/2, ih)
-    selected = np.array([b for b in boxes if b[0] > x1 and b[1] > y1 and b[0]+b[2] < x2 and b[1]+b[3] < y2])
-    if len(selected) > 0:
-        image, boxes = crop(image, selected, [x1,y1,x2,y2])
-        return resize(image, boxes, output_size)
 
-    if x1 == 0:
-        x2 = ow
-    if x2 == iw:
-        x1 = iw - ow
-    if y1 == 0:
-        y2 = oh
-    if y2 == ih:
-        y1 = ih - oh 
-    selected = np.array([b for b in boxes if b[0] > x1 and b[1] > y1 and b[0]+b[2] < x2 and b[1]+b[3] < y2])
-    if len(selected) > 0:
-        image, boxes = crop(image, selected, [x1,y1,x2,y2])
-        return resize(image, boxes, output_size)
+    # the box size is greater than output size
+    # try crop a random rect with about 4-times of the biggest box' size
+    if w > ow/2 or h > oh/2:
+        r = 3*max(w, h)*np.random.rand()
+        x1 = max(x-r, 0)
+        y1 = max(y-r, 0)
+        x2 = min(x+w+r, iw)
+        y2 = min(y+h+r, ih)
+        selected = np.array([b for b in boxes if b[0] >= x1 and b[1] >= y1 and b[0]+b[2] <= x2 and b[1]+b[3] <= y2])
+        assert(selected.shape[0] > 0)
+        image, boxes = imgkit.crop(image, [x1,y1,x2,y2], selected)
+        return imgkit.resize(image, output_size, boxes)
 
-    s = max(w, h)
-    x1 = max(x+w/2-3*s, 0)
-    y1 = max(y+h/2-3*s, 0)
-    x2 = min(x+w/2+3*s, iw)
-    y2 = min(y+h/2+3*s, ih)
+    # try crop a rect with output size
+    rx = (ow - w)*np.random.rand()
+    ry = (oh - h)*np.random.rand()
+    x1 = max(x - rx, 0)
+    y1 = max(y - ry, 0)
+    x2 = min(x1 + ow, iw)
+    y2 = min(y1 + oh, ih)
     selected = np.array([b for b in boxes if b[0] >= x1 and b[1] >= y1 and b[0]+b[2] <= x2 and b[1]+b[3] <= y2])
-    image, boxes = crop(image, selected, [x1,y1,x2,y2])
-    return resize(image, boxes, output_size)
+    assert(selected.shape[0] > 0)
+    image, boxes = imgkit.crop(image, [x1,y1,x2,y2], selected)
+    return imgkit.resize(image, output_size, boxes)
 
 class DataIterator:
-    def __init__(self, data, image_size, feature_shape, batch_size):
+    def __init__(self, data, output_size, feature_shape, batch_size):
         self.data = data
-        self.image_size = image_size
+        self.output_size = output_size
         self.feature_shape = feature_shape
         self.batch_size = batch_size
-    
+
     def __len__(self):
-        steps = len(self.data)//self.batch_size
-        if len(self.data) % self.batch_size > 0:
-            steps += 1
-        return steps
+        samples = len(self.data)
+        batches = samples//self.batch_size
+        if samples % self.batch_size > 0:
+            batches += 1
+        return batches
     
     def __getitem__(self, batch_index):
-        start = self.batch_size*batch_index
-        if start >= len(self.data):
+        start_index = self.batch_size*batch_index
+        if start_index >= len(self.data):
             raise IndexError()
-        end = min(start + self.batch_size, len(self.data))
-        batch_data = self.data[start : end]
-        # NOTES:
-        # image_size: W, H
-        # batch_x shape: N, 3, H, W
-        # batch_y shape: N, C, H, W
-        batch_x = np.zeros((self.batch_size, 3, self.image_size[1], self.image_size[0]))
-        batch_y = np.zeros(((self.batch_size,) + self.feature_shape))
-        for i, sample in enumerate(batch_data):
+        end_index = min(start_index + self.batch_size, len(self.data))
+        batch_size = end_index - start_index
+        batch_x = np.zeros((batch_size, 3, self.output_size[1], self.output_size[0]))
+        batch_y = np.zeros((batch_size,) + self.feature_shape)
+        for i in range(start_index, end_index):
+            sample = self.data[i]
             image = Image.open(sample["image"])
-            scale = np.array(self.image_size[:2], dtype='float')/np.array(image.size[:2])
-            image = image.resize(self.image_size, Image.BICUBIC)   # image_size: W, H
-            image = np.asarray(image)                               # numpy array shape: H, W, C
-            image = image.transpose((2, 0, 1))                      # after transposed: C, H, W
-            batch_x[i, :, :, :] = (image - 127.5)/255
             boxes = np.array(sample["boxes"])
-            for box in boxes:
-                box[:2] *= scale
-                box[2:] *= scale
-            batch_y[i] = encode(self.image_size, boxes, self.feature_shape)
+            image, boxes = transform(image, boxes, self.output_size)
+            batch_x[i-start_index] = (np.array(image).transpose(2,0,1) - 127.5)/255
+            batch_y[i-start_index] = encode(self.output_size, boxes, self.feature_shape)
+            # print("loaded sample=%d, total=%d" % (i, len(self.data))) 
         return batch_x, batch_y
 
 
@@ -227,23 +199,6 @@ def test_data():
         show_images(batch_x, batch_y, image_size)
         break
 
-def draw_grids(image, grid_shape):
-    d = ImageDraw.Draw(image)
-    gw, gh = grid_shape
-    w, h = image.size[0], image.size[1]
-    rw, rh = w/gw, h/gh
-    for j in range(gh):
-        d.line([1, j*rh, w-1, j*rh], fill=(255,0,0), width=2)
-    for i in range(gw):
-        d.line([i*rw, 1, i*rw, h-1], fill=(255,0,0), width=2)
-
-def draw_boxes(image, boxes):
-    d = ImageDraw.Draw(image)
-    for box in boxes:
-        (x, y, w, h) = box[:4]
-        d.rectangle([x,y,x+w,y+h], outline=(255,0,0))
-        d.rectangle([x+1,y+1,x+w-1,y+h-1], outline=(255,0,0))
-
 def test_codec():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
@@ -253,8 +208,8 @@ def test_codec():
     feature = encode(image.size, boxes, (5,7,7))
     print(feature)
     boxes=decode(image.size, feature, 1.0)
-    draw_grids(image, (7,7))
-    draw_boxes(image, boxes)
+    imgkit.draw_grids(image, (7,7))
+    imgkit.draw_boxes(image, boxes, color=(0,255,0))
     plt.imshow(image)
     plt.show()
 
@@ -265,28 +220,28 @@ def test_transform():
         image = Image.open(sample["image"])
         boxes = np.array(sample["boxes"])
         image, boxes = transform(image, boxes, (128, 128))
-        # draw_grids(image, (7,7))
-        draw_boxes(image, boxes)
+        imgkit.draw_grids(image, (7,7))
+        imgkit.draw_boxes(image, boxes, color=(0,255,0))
         plt.imshow(image)
         plt.show(block=True)
 
 def test_model():
     modle = models.Sequential()
-    modle.add(layers.Conv2D(16, (3, 3), stride=1, pad=1, input_shape=(None, 3, 128, 128))) 
+    modle.add(layers.Conv2D(16, (3, 3), stride=1, pad=1, input_shape=(None, 3, 112, 112))) 
     modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+    modle.add(layers.MaxPool2D((2, 2), stride=2))
 
-    modle.add(layers.Conv2D(32, (3, 3), stride=1)) 
+    modle.add(layers.Conv2D(32, (2, 2), stride=1, pad=1)) 
     modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+    modle.add(layers.MaxPool2D((2, 2), stride=2))
 
-    modle.add(layers.Conv2D(48, (3, 3), stride=1)) 
+    modle.add(layers.Conv2D(48, (2, 2), stride=1, pad=1)) 
     modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+    modle.add(layers.MaxPool2D((2, 2), stride=2))
 
-    modle.add(layers.Conv2D(64, (3, 3), stride=1)) 
+    modle.add(layers.Conv2D(64, (2, 2), stride=1, pad=1)) 
     modle.add(layers.ReLU())
-    modle.add(layers.MaxPooling2D((2, 2), stride=2))
+    modle.add(layers.MaxPool2D((2, 2), stride=2))
 
     modle.add(layers.Flatten())
     modle.add(layers.Linear(5*7*7))
@@ -296,11 +251,11 @@ def test_model():
     modle.compile(detect_loss, optimizers.SGD(lr=0.001))
     modle.summary()
 
-    # training
+    # training model
     train_data = widerface.load_data()
-    train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
+    train_data = widerface.select(train_data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
     epochs = 32
-    generator = DataIterator(train_data, (128, 128), (5,7,7), 32)
+    generator = DataIterator(train_data, (112, 112), (5,7,7), 32)
     for i in range(epochs):
         for j in range(len(generator)):
             batch_x,batch_y = generator[j]
@@ -310,10 +265,10 @@ def test_model():
             score = f1_score(batch_y,y)
             print("Epoch=%d, step=%d/%d, loss=%f, f1=%f" % (i+1, j+1, len(generator), loss, score))
 
-    # predict
-    x_true, y_true = generator[0]
+    # predict sample
+    x_true = generator[0][0]
     y_pred = modle.predict(x_true)
-    boxes = decode((128, 128), y_pred[0], 0.5)
+    boxes = decode((112, 112), y_pred[0], 0.5)
     if len(boxes) > 0:
         ax = plt.subplot(1, 1, 1)
         ax.imshow(x_true[0].transpose((1,2,0)*255+128))
@@ -325,4 +280,4 @@ def test_model():
 
 
 if __name__ == "__main__":
-    test_transform()
+    test_model()

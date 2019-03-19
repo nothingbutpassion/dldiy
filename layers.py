@@ -165,9 +165,9 @@ class Conv2D(Layer):
         dx = col2im(dcol, self.x_shape, self.FH, self.FW, self.stride, self.pad)
         return dx
 
-class MaxPooling2D(Layer):
+class MaxPool2D(Layer):
     def __init__(self, pool_size, stride=1, pad=0, **args):
-        super(MaxPooling2D, self).__init__(**args)
+        super(MaxPool2D, self).__init__(**args)
         if not self.name: 
             self.name = "maxpooling2d"
         self.pool_h = pool_size[0]
