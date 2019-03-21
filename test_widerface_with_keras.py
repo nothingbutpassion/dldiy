@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import numpy as np
@@ -97,7 +96,7 @@ def iou(box1, box2 = [0.5, 0.5, 1.0, 1.0]):
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
     x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
     max_x, max_y = max(x11, x21), max(y11, y21)
-    min_x, min_y = max(x12, x22), max(y12, y22)
+    min_x, min_y = min(x12, x22), min(y12, y22)
     assert(min_x > max_x and min_y > max_y)
     I = (min_x - max_x)*(min_y - max_y)
     U = w1*h1 + w2*h2 - I
@@ -140,6 +139,18 @@ def decode(image_size, feature, threshold):
                 boxes.append([x, y, w, h, p])
     return boxes
 
+def iou_loss(box_true, box_pred):
+    x1, y1, w1, h1 = box_true
+    x2, y2, w2, h2 = box_pred
+    x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
+    x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
+    max_x, max_y = K.maximum(x11, x21), K.maximum(y11, y21)
+    min_x, min_y = K.minimum(x12, x22), K.minimum(y12, y22)
+    limit = K.cast(min_x > max_x, dtype='float32')*K.cast(min_y > max_y, dtype='float32')
+    I = limit*(min_x - max_x)*(min_y - max_y)
+    U = w1*h1 + w2*h2 - I
+    return K.mean(1 - I/U)
+
 def detect_loss(y_true, y_pred):
     p, x, y, w, h = [y_pred[:,:,:,i] for i in range(5)]
     tp, tx, ty, tw, th = [y_true[:,:,:,i] for i in range(5)]
@@ -152,7 +163,8 @@ def detect_loss(y_true, y_pred):
     w = 7/(1+K.exp(-w))
     h = 7/(1+K.exp(-h))
     obj_loss = - 10*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
-    loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
+    # loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
+    loc_loss = iou_loss((tx, ty, tw, th), (x, y, w, h))
     m = K.cast(tp > 0, dtype='float32')
     loc_loss *= m
     return K.mean(obj_loss) + 10*K.mean(loc_loss)
@@ -228,23 +240,26 @@ def build_model():
 
 def test_model():
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model.h5_320.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_768.h5"
     model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss, "f1_score":f1_score})
     #model = build_model()
     model.summary()
     
     # load train data
-    train_data = widerface.load_data()
-    train_data = widerface.select(train_data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
+    data = widerface.load_data()
+    train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
     generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
 
     # train model
     # for i in range(111):
     #     model.fit_generator(generator, epochs=64)
-    #     model.save(model_file + "_" + str((i+1)*64) + ".h5")
+    #     model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model"
+    #     model.save(model_file + "_" + str(320+(i+1)*64) + ".h5")
 
     # predict sample
-    batch_x, batch_y = generator[0]
+    val_data = widerface.select(data[1], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
+    generator = DataGenerator(val_data, (256, 256), (7,7,5), 32)
+    batch_x, batch_y = generator[11]
     batch_x, batch_y = batch_x[:4], batch_y[:4]
     y_pred = model.predict(batch_x)
     y_pred[:,:,:,:3] = 1/(1 + np.exp(-y_pred[:,:,:,:3]))

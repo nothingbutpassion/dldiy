@@ -10,13 +10,13 @@ import optimizers
 import models
 import preprocessing.imgkit as imgkit
 
+# NOTES:
+# Precision = TP/(TP + FP)
+# Recall = TP/(TP + FN)
+# F1 Score = 2*(Recall * Precision) / (Recall + Precision)
 def f1_score(y_true, y_pred):
     p = 1/(1 + np.exp(-y_pred[:,0,:,:]))
     tp = y_true[:,0,:,:]
-    # NOTES:
-    # Precision = TP/(TP + FP)
-    # Recall = TP/(TP + FN)
-    # F1 Score = 2*(Recall * Precision) / (Recall + Precision)
     P = p > 0.5
     F = p <= 0.5
     TP = (tp > 0.5)*P
@@ -115,7 +115,6 @@ class DataIterator:
             image, boxes = transform(image, boxes, self.output_size)
             batch_x[i-start_index] = (np.array(image).transpose(2,0,1) - 127.5)/255
             batch_y[i-start_index] = encode(self.output_size, boxes, self.feature_shape)
-            # print("loaded sample=%d, total=%d" % (i, len(self.data))) 
         return batch_x, batch_y
 
 
@@ -128,8 +127,8 @@ def iou(oh, ow, box1, box2 = [0.5, 0.5, 1.0, 1.0]):
     w1, h1 = ow*w1, oh*h1
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
     x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
-    max_x, max_y = max(x11, x21), min(y11, y21)
-    min_x, min_y = max(x12, x22), min(y12, y22)
+    max_x, max_y = max(x11, x21), max(y11, y21)
+    min_x, min_y = min(x12, x22), min(y12, y22)
     assert(0 <= x1 and x1 < 1 and 0 <= y1 and y1 < 1 and w1 > 0 and h1 > 0)
     assert(min_x > max_x and min_y > max_y)
     I = (min_x - max_x)*(min_y - max_y)

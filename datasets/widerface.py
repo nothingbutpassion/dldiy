@@ -47,7 +47,7 @@ def _parse_filelist(root, image_dir, list_file):
 def init_data(root):
     _extract_files(root)
     train_data = _parse_bbx(root, "WIDER_train/images","/wider_face_split/wider_face_train_bbx_gt.txt")
-    val_data = _parse_bbx(root, "WIDER_train/images", "/wider_face_split/wider_face_val_bbx_gt.txt")
+    val_data = _parse_bbx(root, "WIDER_val/images", "/wider_face_split/wider_face_val_bbx_gt.txt")
     test_data = _parse_filelist(root, "WIDER_test/images", "wider_face_split/wider_face_test_filelist.txt")
     dataset = (train_data, val_data, test_data)
     print("creating pickle file ...")
