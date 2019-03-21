@@ -24,9 +24,8 @@ def transform(image, boxes, output_size):
     # find the biggest box, try crop based on the center of the biggest box
     area = np.array([b[2]*b[3] for b in boxes])
     x, y, w, h = boxes[np.argmax(area)]
-
     # the box size is greater than output size
-    # try crop a random rect with about 4-times of the biggest box' size
+    # crop a random rect with about 4-times of the biggest box' size
     if w > ow or h > oh:
         r = 3*max(w, h)*np.random.rand()
         x1 = max(x-r, 0)
@@ -38,7 +37,7 @@ def transform(image, boxes, output_size):
         image, boxes = imgkit.crop(image, [x1,y1,x2,y2], selected)
         return imgkit.resize(image, output_size, boxes)
 
-    # try crop a rect with output size
+    # crop a random rect with output size
     rx = (ow - w)*np.random.rand()
     ry = (oh - h)*np.random.rand()
     x1 = max(x - rx, 0)
@@ -90,8 +89,9 @@ class DataGenerator(utils.Sequence):
             # print("loaded sample=%d, total=%d" % (i, len(self.data))) 
         return batch_x, batch_y
 
-def iou(box1, box2 = [0.5, 0.5, 1.0, 1.0]):
+def iou(oh, ow, box1, box2=[0.5, 0.5, 1.0, 1.0]):
     x1, y1, w1, h1 = box1
+    w1, h1 = ow*w1, oh*h1
     x2, y2, w2, h2 = box2
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
     x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
@@ -115,8 +115,8 @@ def encode(image_size, boxes, feature_shape):
         cx, cy = sw*(x+w/2), sh*(y+h/2)
         i, j = int(cx), int(cy)    
         bx, by = cx-i, cy-j
-        bw, bh = sw*w, sh*h
-        if result[j,i,0] > 0 and iou([bx, by, bw, bh]) > iou(result[j,i,1:]):
+        bw, bh = float(w)/iw, float(h)/ih
+        if result[j,i,0] > 0 and iou(oh, ow, [bx, by, bw, bh]) > iou(oh, ow, result[j,i,1:]):
             # NOTES: select the bunding box that has biggest IOU with the grid
             result[j,i,:]=(1, bx, by, bw, bh)
         else:
@@ -132,8 +132,8 @@ def decode(image_size, feature, threshold):
         for i in range(ow):
             p, bx, by, bw, bh = feature[j,i,:]
             if (p >= threshold):
-                w = sw*bw
-                h = sh*bh
+                w = iw*bw
+                h = ih*bh
                 x = sw*(i + bx) - w/2
                 y = sh*(j + by) - h/2
                 boxes.append([x, y, w, h, p])
@@ -142,6 +142,7 @@ def decode(image_size, feature, threshold):
 def iou_loss(box_true, box_pred):
     x1, y1, w1, h1 = box_true
     x2, y2, w2, h2 = box_pred
+    w1, h1, w2, h2 = w1*5, h1*5, w2*5, h2*5
     x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
     x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
     max_x, max_y = K.maximum(x11, x21), K.maximum(y11, y21)
@@ -154,36 +155,41 @@ def iou_loss(box_true, box_pred):
 def detect_loss(y_true, y_pred):
     p, x, y, w, h = [y_pred[:,:,:,i] for i in range(5)]
     tp, tx, ty, tw, th = [y_true[:,:,:,i] for i in range(5)]
-    # NOTES: 
-    # p, x, y should be: (0, 1)
-    # w, h    should be: (0, S), where S X S is the grid num 
-    p = 1/(1+K.exp(-p))
-    x = 1/(1+K.exp(-x))
-    y = 1/(1+K.exp(-y))
-    w = 7/(1+K.exp(-w))
-    h = 7/(1+K.exp(-h))
-    obj_loss = - 10*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
+    obj_loss = - 5*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
     # loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
     loc_loss = iou_loss((tx, ty, tw, th), (x, y, w, h))
     m = K.cast(tp > 0, dtype='float32')
     loc_loss *= m
-    return K.mean(obj_loss) + 10*K.mean(loc_loss)
+    return K.mean(obj_loss) + 5*K.mean(loc_loss)
 
-def f1_score(y_true, y_pred):
-    p = 1/(1 + K.exp(-y_pred[:,:,:,0]))
+# NOTES:
+# Precision = TP/(TP + FP)
+def precision(y_true, y_pred):
+    p = y_pred[:,:,:,0]
     tp = y_true[:,:,:,0]
-    # NOTES:
-    # Precision = TP/(TP + FP)
-    # Recall = TP/(TP + FN)
-    # F1 Score = 2*(Recall * Precision) / (Recall + Precision)
     P = K.cast(p > 0.5, dtype='float32')
-    F = K.cast(p <= 0.5, dtype='float32')
     TP = K.cast(tp > 0.5, dtype='float32')*P
-    FN = K.cast(tp > 0.5, dtype='float32')*F
-    Precision = K.sum(TP)/K.sum(P)
-    Recall = K.sum(TP)/(K.sum(TP) + K.sum(FN))
-    F1 = 2*(Recall*Precision)/(Recall + Precision)
-    return F1
+    epsilon = 1e-7
+    return K.sum(TP)/(K.sum(P) + epsilon)
+
+# NOTES:
+# Recall = TP/(TP + FN)
+def recall(y_true, y_pred):
+    p = y_pred[:,:,:,0]
+    tp = y_true[:,:,:,0]
+    TP = K.cast(tp > 0.5, dtype='float32')*K.cast(p > 0.5, dtype='float32')
+    FN = K.cast(tp > 0.5, dtype='float32')*K.cast(p <= 0.5, dtype='float32')
+    epsilon = 1e-7
+    return K.sum(TP)/(K.sum(TP) + K.sum(FN) + epsilon)
+
+# NOTES:
+# Precision = TP/(TP + FP)
+# Recall = TP/(TP + FN)
+# F1 Score = 2*(Recall * Precision) / (Recall + Precision)
+def f1_score(y_true, y_pred):
+    Precision = precision(y_true, y_pred)
+    Recall = recall(y_true, y_pred)
+    return 2*(Recall*Precision)/(Recall + Precision)
 
 def test_codec():
     train_data = widerface.load_data()
@@ -191,11 +197,11 @@ def test_codec():
     for sample in train_data:
         image = Image.open(sample["image"])
         boxes = np.array(sample["boxes"])
-        image, boxes = transform(image, boxes, (256, 256))
-        feature = encode(image.size, boxes, (7,7,5))
+        image, boxes = transform(image, boxes, (160, 160))
+        feature = encode(image.size, boxes, (5,5,5))
         print(feature)
         boxes=decode(image.size, feature, 1.0)
-        imgkit.draw_grids(image, (7,7))
+        imgkit.draw_grids(image, (5,5))
         imgkit.draw_boxes(image, boxes, color=(0,255,0))
         plt.imshow(image)
         plt.show()
@@ -223,49 +229,49 @@ def test_data():
 
 def build_model():
     model = models.Sequential()
-    model.add(layers.Conv2D(16, (3, 3), strides=(1,1), activation="relu", input_shape=(256, 256, 3)))
-    model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(3,3)))
-    model.add(layers.Conv2D(32, (3, 3), strides=(1,1), activation="relu"))
-    model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(3,3)))
-    model.add(layers.Conv2D(48, (3, 3), strides=(1,1), activation="relu"))
-    model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
-    model.add(layers.Conv2D(64, (3, 3), strides=(1,1), activation="relu"))
-    model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
+    model.add(layers.SeparableConv2D(32, 3, padding="same", activation="relu", input_shape=(160, 160, 3)))
+    model.add(layers.MaxPool2D(2))
+    model.add(layers.SeparableConv2D(48, 3, padding="same", activation="relu"))
+    model.add(layers.MaxPool2D(2))
+    model.add(layers.SeparableConv2D(64, 3, padding="same", activation="relu"))
+    model.add(layers.MaxPool2D(2))
+    model.add(layers.SeparableConv2D(80, 3, padding="same", activation="relu"))
+    model.add(layers.MaxPool2D(2))
+    model.add(layers.SeparableConv2D(80, 3, padding="same", activation="relu"))
+    model.add(layers.MaxPool2D(2))
     model.add(layers.Flatten())
-    model.add(layers.Dense(7*7*5))
-    model.add(layers.Reshape((7,7,5)))
-    model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss, metrics=[f1_score])
+    model.add(layers.Dense(5*5*5, activation="sigmoid"))
+    model.add(layers.Reshape((5,5,5)))
+    model.compile(optimizer=optimizers.SGD(lr=0.01), loss=detect_loss, metrics=[precision, recall, f1_score])
     return model
 
 
 def test_model():
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_768.h5"
-    model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss, "f1_score":f1_score})
-    #model = build_model()
+    #model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_768.h5"
+    #model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss, "f1_score":f1_score})
+    model = build_model()
     model.summary()
     
     # load train data
     data = widerface.load_data()
     train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
-    generator = DataGenerator(train_data, (256, 256), (7,7,5), 32)
+    generator = DataGenerator(train_data, (160, 160), (5,5,5), 32)
 
     # train model
-    # for i in range(111):
-    #     model.fit_generator(generator, epochs=64)
-    #     model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model"
-    #     model.save(model_file + "_" + str(320+(i+1)*64) + ".h5")
+    for i in range(111):
+        model.fit_generator(generator, epochs=20)
+        model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v2"
+        model.save(model_file + "_" + str((i+1)*20) + ".h5")
 
     # predict sample
     val_data = widerface.select(data[1], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
-    generator = DataGenerator(val_data, (256, 256), (7,7,5), 32)
+    generator = DataGenerator(val_data, (160, 160), (7,7,5), 32)
     batch_x, batch_y = generator[11]
     batch_x, batch_y = batch_x[:4], batch_y[:4]
     y_pred = model.predict(batch_x)
-    y_pred[:,:,:,:3] = 1/(1 + np.exp(-y_pred[:,:,:,:3]))
-    y_pred[:,:,:,3:] = 7/(1 + np.exp(-y_pred[:,:,:,3:]))
     for i in range(len(y_pred)):
-        boxes = decode((256, 256), y_pred[i], 0.75)
+        boxes = decode((160, 160), y_pred[i], 0.6)
         ax = plt.subplot(2, 2, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
