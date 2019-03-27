@@ -17,6 +17,7 @@ def draw_boxes(image, boxes, color=(255,0,0), width=2):
     for box in boxes:
         [x, y, w, h] = box[:4]
         d.rectangle([x,y,x+w,y+h], outline=color, width=width)
+        d.point([(x+w/2-0.5,y+h/2-0.5), (x+w/2+0.5,y+h/2-0.5), (x+w/2-0.5,y+h/2+0.5), (x+w/2+0.5,y+h/2+0.5)], fill=color)
 
 def crop(image, rect, boxes):
     image = image.crop(rect)
