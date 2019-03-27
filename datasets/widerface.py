@@ -3,6 +3,7 @@ import os
 import zipfile
 import pickle
 import numpy as np
+import PIL.Image as Image
 
 dataset_dir = os.path.dirname(os.path.abspath(__file__)) + "/widerface"
 save_file = dataset_dir + "/winderface.pkl"
@@ -109,6 +110,27 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
                 bboxes.append(box)
         if len(bboxes) > 0:
             result.append({"image": image, "boxes": bboxes})
+    return result
+
+def crop(data, num_sample, crop_size):
+    result = []
+    cw, ch = crop_size
+    while (len(result) < num_sample):
+        index = min(len(data)-1, int(np.random.rand()*len(data)))
+        sample = data[index]
+        image = sample["image"]
+        iw, ih = Image.open(image).size
+        if iw < cw  or ih < ch:
+            continue
+        for i in range(11):
+            x = int((iw - cw)*np.random.rand())
+            y = int((ih - ch)*np.random.rand())
+            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
+            if not boxes:
+                continue
+            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes})
+            if len(result) == num_sample:
+                break
     return result
 
 def load_data(root=dataset_dir):

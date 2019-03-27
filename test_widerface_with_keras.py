@@ -257,7 +257,7 @@ def train_model(model, train_data, image_size, feature_shape, batch_size):
     for i in range(111):
         model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True)
         model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v4"
-        model.save(model_file + "_" + str(240+(i+1)*20) + ".h5")
+        model.save(model_file + "_" + str(20+(i+1)*20) + ".h5")
 
 def predict_model(model, val_data, image_size, feature_shape):
     val_data = widerface.select(val_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
@@ -291,16 +291,16 @@ def test_model():
     batch_size=100
 
     # build model
-    # model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v3_640.h5"
-    # model = models.load_model(model_file, custom_objects={
-    #     "detect_loss": detect_loss, 
-    #     "object_loss": object_loss,
-    #     "giou_loss": giou_loss, 
-    #     "f1_score": f1_score, 
-    #     "precision": precision, 
-    #     "recall": recall})
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v4_20.h5"
+    model = models.load_model(model_file, custom_objects={
+        "detect_loss": detect_loss, 
+        "object_loss": object_loss,
+        "giou_loss": giou_loss, 
+        "f1_score": f1_score, 
+        "precision": precision, 
+        "recall": recall})
 
-    model = build_model()
+    # model = build_model()
     model.summary()
 
     # load widerface data
@@ -315,6 +315,3 @@ def test_model():
 
 if __name__ == "__main__":
     test_model()
-
-
-    

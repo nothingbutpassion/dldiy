@@ -199,18 +199,20 @@ def test_data():
         break
 
 def test_codec():
-    train_data = widerface.load_data()
-    train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    sample = train_data[2]
-    image = Image.open(sample["image"])
-    boxes = sample["boxes"]
-    feature = encode(image.size, boxes, (5,7,7))
-    print(feature)
-    boxes=decode(image.size, feature, 1.0)
-    imgkit.draw_grids(image, (7,7))
-    imgkit.draw_boxes(image, boxes, color=(0,255,0))
-    plt.imshow(image)
-    plt.show()
+    data = widerface.load_data()
+    train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
+    train_data = widerface.crop(train_data, 100, (160, 160))
+    for sample in train_data:
+        image = Image.open(sample["image"])
+        image = imgkit.crop(image, sample["crop"])
+        boxes = sample["boxes"]
+        feature = encode(image.size, boxes, (5,7,7))
+        print(feature)
+        boxes=decode(image.size, feature, 1.0)
+        imgkit.draw_grids(image, (7,7))
+        imgkit.draw_boxes(image, boxes, color=(0,255,0))
+        plt.imshow(image)
+        plt.show()
 
 def test_transform():
     train_data = widerface.load_data()
@@ -279,4 +281,4 @@ def test_model():
 
 
 if __name__ == "__main__":
-    test_model()
+    test_codec()
