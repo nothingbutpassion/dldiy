@@ -126,7 +126,7 @@ def crop(data, num_sample, crop_size):
             x = int((iw - cw)*np.random.rand())
             y = int((ih - ch)*np.random.rand())
             boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
-            if not boxes:
+            if len(boxes) == 0:
                 continue
             result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes})
             if len(result) == num_sample:
