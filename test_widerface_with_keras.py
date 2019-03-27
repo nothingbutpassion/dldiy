@@ -139,28 +139,33 @@ def decode(image_size, feature, threshold):
                 boxes.append([x, y, w, h, p])
     return boxes
 
-def iou_loss(box_true, box_pred):
-    x1, y1, w1, h1 = box_true
-    x2, y2, w2, h2 = box_pred
+def giou_loss(y_true, y_pred):
+    p1, x1, y1, w1, h1 = [y_true[:,:,:,i] for i in range(5)]
+    p2, x2, y2, w2, h2 = [y_pred[:,:,:,i] for i in range(5)]
     w1, h1, w2, h2 = w1*5, h1*5, w2*5, h2*5
-    x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
-    x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
+    x11, x12, y11, y12 = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
+    x21, x22, y21, y22 = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
     max_x, max_y = K.maximum(x11, x21), K.maximum(y11, y21)
     min_x, min_y = K.minimum(x12, x22), K.minimum(y12, y22)
-    limit = K.cast(min_x > max_x, dtype='float32')*K.cast(min_y > max_y, dtype='float32')
-    I = limit*(min_x - max_x)*(min_y - max_y)
+    m = K.cast(min_x > max_x, dtype='float32')*K.cast(min_y > max_y, dtype='float32')
+    I = m*(min_x - max_x)*(min_y - max_y)
     U = w1*h1 + w2*h2 - I
-    return K.mean(1 - I/U)
+    min_x, min_y = K.minimum(x11, x21), K.minimum(y11, y21)
+    max_x, max_y = K.maximum(x12, x22), K.maximum(y12, y22)
+    C = (max_x - min_x)*(max_y - min_y)
+    giou = I/U - (C-U)/C
+    tp = K.cast(p1 > 0, dtype='float32')
+    return K.sum((1 - giou)*tp)
 
 def detect_loss(y_true, y_pred):
-    p, x, y, w, h = [y_pred[:,:,:,i] for i in range(5)]
-    tp, tx, ty, tw, th = [y_true[:,:,:,i] for i in range(5)]
-    obj_loss = - 5*tp*K.log(p) - 0.5*(1-tp)*K.log(1-p)
+    # p1, x1, y1, w1, h1 = [y_true[:,:,:,i] for i in range(5)]
+    # p2, x2, y2, w2, h2 = [y_pred[:,:,:,i] for i in range(5)]
     # loc_loss = K.square(tx-x) + K.square(ty-y) + K.square(tw-w) + K.square(th-h)
-    loc_loss = iou_loss((tx, ty, tw, th), (x, y, w, h))
-    m = K.cast(tp > 0, dtype='float32')
-    loc_loss *= m
-    return K.mean(obj_loss) + 5*K.mean(loc_loss)
+    p1 = y_true[:,:,:,0]
+    p2 = y_pred[:,:,:,0]
+    tp = K.cast(p1 > 0, dtype='float32')
+    obj_loss = - 0.8*p1*K.log(p2) - 0.2*(1-p1)*K.log(1-p2) 
+    return K.sum(obj_loss) + 3.0*giou_loss(y_true, y_pred)
 
 # NOTES:
 # Precision = TP/(TP + FP)
@@ -209,9 +214,9 @@ def test_codec():
 def test_data():
     train_data = widerface.load_data()
     train_data = widerface.select(train_data[0], blur="0", occlusion="0", pose="0", invalid="0")
-    image_size = (200, 200)
+    image_size = (160, 160)
     batch_size = 4
-    feature_shape = (7,7,5)
+    feature_shape = (5, 5, 5)
     for batch_x, batch_y in DataGenerator(train_data, image_size, feature_shape, batch_size):
         for i in range(batch_size):
             boxes = decode(image_size, batch_y[i], 1.0)
@@ -219,7 +224,7 @@ def test_data():
             plt.tight_layout()
             ax.set_title("Sample %s" % i)
             ax.axis('off')
-            ax.imshow(np.array(batch_x[i]*255+127, dtype='uint8'))
+            ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
             for box in boxes:
                 (x, y, w, h) = box[:4]
                 rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
@@ -239,50 +244,72 @@ def build_model():
     model.add(layers.MaxPool2D(2))
     model.add(layers.SeparableConv2D(80, 3, padding="same", activation="relu"))
     model.add(layers.MaxPool2D(2))
+    model.add(layers.SeparableConv2D(40, 3, padding="same", activation="relu"))
     model.add(layers.Flatten())
     model.add(layers.Dense(5*5*5, activation="sigmoid"))
     model.add(layers.Reshape((5,5,5)))
-    model.compile(optimizer=optimizers.SGD(lr=0.01), loss=detect_loss, metrics=[precision, recall, f1_score])
+    model.compile(optimizer=optimizers.SGD(lr=0.001), loss=detect_loss, metrics=[giou_loss, precision, recall, f1_score])
     return model
 
-
-def test_model():
-    # build model
-    #model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_768.h5"
-    #model = models.load_model(model_file, custom_objects={"detect_loss":detect_loss, "f1_score":f1_score})
-    model = build_model()
-    model.summary()
-    
-    # load train data
-    data = widerface.load_data()
-    train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
-    generator = DataGenerator(train_data, (160, 160), (5,5,5), 32)
-
-    # train model
+def train_model(model, train_data, image_size, feature_shape, batch_size):
+    train_data = widerface.select(train_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
+    generator = DataGenerator(train_data, image_size, feature_shape, batch_size)
     for i in range(111):
         model.fit_generator(generator, epochs=20)
-        model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v2"
-        model.save(model_file + "_" + str((i+1)*20) + ".h5")
+        model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v3"
+        model.save(model_file + "_" + str(240+(i+1)*20) + ".h5")
 
-    # predict sample
-    val_data = widerface.select(data[1], blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
-    generator = DataGenerator(val_data, (160, 160), (7,7,5), 32)
+def predict_model(model, val_data, image_size, feature_shape):
+    val_data = widerface.select(val_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=30)
+    generator = DataGenerator(val_data, image_size, feature_shape, 32)
     batch_x, batch_y = generator[11]
-    batch_x, batch_y = batch_x[:4], batch_y[:4]
-    y_pred = model.predict(batch_x)
+    batch_x, batch_y = batch_x[:9], batch_y[:9]
+    y_pred = model.predict(batch_x) 
     for i in range(len(y_pred)):
-        boxes = decode((160, 160), y_pred[i], 0.6)
-        ax = plt.subplot(2, 2, i + 1)
+        ax = plt.subplot(3, 3, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
+        boxes = decode(image_size, y_pred[i], 0.6)
         for box in boxes:
             (x, y, w, h, p) = box
             print("Sample %d, box=(%d,%d,%d,%d), score=%f" % (i, x, y, w, h, p))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
+        boxes = decode(image_size, batch_y[i], 0.5)
+        for box in boxes:
+            (x, y, w, h, p) = box
+            print("Sample %d, box=(%d,%d,%d,%d), score=%f" % (i, x, y, w, h, p))
+            rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='g', facecolor='none')
+            ax.add_patch(rect)
     plt.show()
+
+def test_model():
+    image_size=(160, 160)
+    feature_shape=(5,5,5)
+    batch_size=64
+
+    # build model
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v3_240.h5"
+    model = models.load_model(model_file, custom_objects={
+        "detect_loss": detect_loss, 
+        "giou_loss": giou_loss, 
+        "f1_score": f1_score, 
+        "precision": precision, 
+        "recall": recall})
+    # model = build_model()
+    model.summary()
+    
+    # load widerface data
+    data = widerface.load_data()
+
+    # train model
+    train_model(model, data[0], image_size, feature_shape, batch_size)
+
+    # predict model
+    predict_model(model, data[1], image_size, feature_shape)
+
 
 if __name__ == "__main__":
     test_model()
