@@ -206,10 +206,10 @@ def test_codec():
         image = Image.open(sample["image"])
         image = imgkit.crop(image, sample["crop"])
         boxes = sample["boxes"]
-        feature = encode(image.size, boxes, (5,7,7))
+        feature = encode(image.size, boxes, (5,3,3))
         print(feature)
         boxes=decode(image.size, feature, 1.0)
-        imgkit.draw_grids(image, (7,7))
+        imgkit.draw_grids(image, (3,3))
         imgkit.draw_boxes(image, boxes, color=(0,255,0))
         plt.imshow(image)
         plt.show()
