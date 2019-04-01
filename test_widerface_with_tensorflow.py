@@ -210,7 +210,7 @@ def build_model():
     return model
 
 def load_model(model_file):
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/" + model_file
+    
     model = models.load_model(model_file, custom_objects={
         "detect_loss": detect_loss, 
         "object_loss": object_loss, 
@@ -219,14 +219,15 @@ def load_model(model_file):
     model.summary()
     return model
 
-def train_model(model, train_data, image_size, feature_shape, num_sample, batch_size):
+def train_model(model, train_data, image_size, feature_shape, num_sample, batch_size, save_file):
     train_data = widerface.select(train_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
     train_data = widerface.crop(train_data, num_sample, image_size)
     generator = DataGenerator(train_data, image_size, feature_shape, batch_size)
-    for i in range(111):
+    pos=save_file.rfind('_')
+    start = int(save_file[pos+1: len(save_file)-3])+1
+    for i in range(start,111):
         model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True)
-        model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v5"
-        model.save(model_file + "_" + str(60+(i+1)*20) + ".h5")
+        model.save(save_file[:pos+1] + str(i*20) + ".h5")
 
 def predict_model(model, val_data, image_size, feature_shape):
     val_data = widerface.select(val_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
@@ -261,14 +262,15 @@ def test_model():
     batch_size=64
 
     # build model
-    model=load_model("face_model_v5_160.h5")
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v5_160.h5"
+    model=load_model(model_file)
     #model=build_model()
 
     # load widerface data
     data = widerface.load_data()
 
     # train model
-    train_model(model, data[0], image_size, feature_shape, num_sample, batch_size)
+    train_model(model, data[0], image_size, feature_shape, num_sample, batch_size, model_file)
 
     # predict model
     predict_model(model, data[1], image_size, feature_shape)

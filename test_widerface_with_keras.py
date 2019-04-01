@@ -291,7 +291,7 @@ def test_model():
     batch_size=100
 
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v4_20.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v4_960.h5"
     model = models.load_model(model_file, custom_objects={
         "detect_loss": detect_loss, 
         "object_loss": object_loss,
@@ -307,7 +307,7 @@ def test_model():
     data = widerface.load_data()
 
     # train model
-    train_model(model, data[0], image_size, feature_shape, batch_size)
+    #train_model(model, data[0], image_size, feature_shape, batch_size)
 
     # predict model
     predict_model(model, data[1], image_size, feature_shape)
