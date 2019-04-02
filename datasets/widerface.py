@@ -23,7 +23,7 @@ def _parse_bbx(root, image_dir, bbox_file):
     with open(root + "/" + bbox_file, "r") as f:
         lines = f.readlines()
         i = 0
-        while(i < len(lines)):
+        while i < len(lines):
             sample = {}
             sample["image"] = root + "/" + image_dir +"/" + lines[i].strip()
             sample["boxes"] = []
