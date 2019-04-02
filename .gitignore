@@ -2,3 +2,4 @@
 *.pkl
 datasets/widerface/*
 datasets/mnist/*
+datasets/fddb/*

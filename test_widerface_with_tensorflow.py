@@ -7,6 +7,7 @@ import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 import PIL.Image as Image
 import tensorflow
+import cv2
 
 models = tensorflow.keras.models
 layers = tensorflow.keras.layers
@@ -210,7 +211,6 @@ def build_model():
     return model
 
 def load_model(model_file):
-    
     model = models.load_model(model_file, custom_objects={
         "detect_loss": detect_loss, 
         "object_loss": object_loss, 
@@ -255,6 +255,25 @@ def predict_model(model, val_data, image_size, feature_shape):
             ax.add_patch(rect)
     plt.show()
 
+def detect(model):
+    c = cv2.VideoCapture(0)
+    r, img = c.read()
+    while r:
+        # img=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        small=cv2.resize(img, (160,160))
+        x = (small-127.5)/255
+        y_pred = model.predict(np.array([x]))
+        boxes = decode((160,160), y_pred[0], 0.9)
+        # boxes = [b for b in boxes if b[0] > 0 and b[1] > 0]
+        for box in boxes:
+            (x, y, w, h, p) = box
+            cv2.rectangle(small, (int(x),int(y)), (int(x+w),int(x+y)), (0,255,0), 2)
+        img=cv2.resize(small, (img.shape[1], img.shape[0]))
+        cv2.imshow("camera", img)
+        k = cv2.waitKey(20)
+        r, img = c.read()
+
+
 def test_model():
     image_size=(160, 160)
     feature_shape=(3,3,5)
@@ -262,7 +281,7 @@ def test_model():
     batch_size=64
 
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v5_160.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/datasets/widerface/face_model_v5_480.h5"
     model=load_model(model_file)
     #model=build_model()
 
