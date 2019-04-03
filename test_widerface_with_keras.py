@@ -307,7 +307,7 @@ def test_model():
     data = widerface.load_data()
 
     # train model
-    #train_model(model, data[0], image_size, feature_shape, batch_size)
+    train_model(model, data[0], image_size, feature_shape, batch_size)
 
     # predict model
     predict_model(model, data[1], image_size, feature_shape)
