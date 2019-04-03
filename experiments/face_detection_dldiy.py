@@ -1,10 +1,13 @@
+import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import datasets.widerface as widerface
 import PIL.Image as Image
 import PIL.ImageDraw as ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/.." )
+import datasets.widerface as widerface
 import layers
 import optimizers
 import models
