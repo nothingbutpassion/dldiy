@@ -93,7 +93,6 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
     for sample in data:
         image = sample["image"]
         bboxes = []
-        calidates = []
         for boxes in sample["boxes"]:
             box = [float(s) for s in boxes[:4]]
             attributes = boxes[4:]
@@ -109,11 +108,8 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
                 passed = False 
             if passed:
                 bboxes.append(box)
-            else:
-                calidates.append(box)
-        if len(bboxes) > len(sample["boxes"])/2:
-            calidates = [b for b in calidates if b[2] >= min_size/2 or b[3] >= min_size/2]
-            result.append({"image": image, "boxes": bboxes + calidates})
+        if len(bboxes) == len(sample["boxes"]):
+            result.append({"image": image, "boxes": bboxes})
     return result
 
 def crop(data, num_sample, crop_size):
@@ -129,7 +125,7 @@ def crop(data, num_sample, crop_size):
         for i in range(11):
             x = int((iw - cw)*np.random.rand())
             y = int((ih - ch)*np.random.rand())
-            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
+            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+0.8*b[2] < x+cw and b[1]+0.8*b[3] < y+ch]
             if len(boxes) == 0:
                 continue
             result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes})
