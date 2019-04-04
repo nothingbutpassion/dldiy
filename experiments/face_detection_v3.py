@@ -146,7 +146,13 @@ def load_model(model_file):
         "detect_loss": detect_loss, 
         "object_loss": object_loss, 
         "precision": precision, 
-        "recall": recall})
+        "recall": recall}, 
+        compile=False)
+    for layer in model.layers[:-4]:
+        layer.trainable = False
+    for layer in model.layers[-4:]:
+        layer.trainable = True
+    model.compile(optimizer=optimizers.Adagrad(), loss=detect_loss, metrics=[object_loss, precision, recall])
     model.summary()
     return model
 
@@ -181,7 +187,7 @@ if __name__ == "__main__":
     feature_shape=(3,3,5)
     num_sample=6400
     batch_size=64
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v3_40.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v3_300.h5"
     model=load_model(model_file)
     # model = build_modle()
     data = widerface.load_data()
