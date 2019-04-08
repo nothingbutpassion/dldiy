@@ -50,21 +50,47 @@ def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1
     # For each ground truth box, match a default box with max IOU
     for gb in gboxes:
         ious = [iou(gb, db) for db in dboxes]
-        features[np.argmax(ious)] = [1, 0] + gb
+        i = np.argmax(ious)
+        dx, dy, dw, dh = dboxes[i]
+        gx, gy, gw, gh = gb
+        features[i] = [1, 0] + [(gx-dx)/dw, (gy-dy)/dh, np.log(gw/dw), np.log(gh/dh)]
     # For each default box, match a groud truth box with IOU > 0.5
     for i in range(len(dboxes)):
         gbs = [gb for gb in gboxes if iou(gb, dboxes[i]) > 0.5]
         if len(gbs) > 0:
             ious = [iou(gb, dboxes[i]) for gb in gbs]
-            features[i] = [1, 0] + gbs[np.argmax(ious)]
+            dx, dy, dw, dh = dboxes[i]
+            gx, gy, gw, gh = gbs[np.argmax(ious)]
+            features[i] = [1, 0] + [(gx-dx)/dw, (gy-dy)/dh, np.log(gw/dw), np.log(gh/dh)]
     return features
 
-def decode(features, threshold=0.5, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def get_dbox(feature_index, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+    aspect_num = len(aspects)
+    feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
+    for i in range(1, len(feature_nums)):
+        feature_nums[i] += feature_nums[i-1]
+    i = 0
+    while feature_index >= feature_nums[i]:
+        i += 1
+    if i > 0:
+        feature_index -= feature_nums[i-1]
+    rows, cols = sizes[i]
+    scale = scales[i]
+    i = feature_index//(cols*aspect_num)
+    j = (feature_index - i*cols*aspect_num)//3
+    k = feature_index - i*cols*aspect_num - j*aspect_num
+    dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
+    return [dx, dy, dw, dh]
+
+
+def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
     gboxes = []
     for i in range(len(features)):
-        c1, c0, x, y, w, h = features[i]
-        if c1 > threshold:
-            gboxes.append([x, y, w, h])
+        c0, c1, x, y, w, h = features[i]
+        if c0 > c1:
+            dx, dy, dw, dh = get_dbox(i)
+            gx, gy, gw, gh = x*dw+dx, y*dh+dy, np.exp(w)*dw, np.exp(h)*dh
+            gboxes.append([gx, gy, gw, gh])
     return gboxes
 
 def test_codec():
@@ -87,13 +113,15 @@ def test_codec():
         plt.show()
 
 def confidence_loss(y_true, y_pred):
-    return 0
+    c = K.softmax(y_pred[:,:,:2])
+    return K.sum(-y_true[:,:,0]*K.log(c[:,:,0]) - y_true[:,:,1]*K.log(c[:,:,1]))
 
 def localization_loss(y_true, y_pred):
     return 0
 
 def detection_loss(y_true, y_pred):
-    return confidence_loss(y_true, y_pred) + localization_loss(y_true, y_pred)
+    N = K.sum(K.cast(y_true[:,:,0] > 0, dtype='float32'))
+    return (confidence_loss(y_true, y_pred) + localization_loss(y_true, y_pred))/N
 
 
 def build_modle():
