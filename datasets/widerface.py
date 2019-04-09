@@ -135,6 +135,34 @@ def crop(data, num_sample, crop_size):
                 break
     return result
 
+def transform(data, num_sample, crop_size, output_size, resize_rate=0.5):
+    result = []
+    while (len(result) < num_sample):
+        index = min(len(data)-1, int(np.random.rand()*len(data)))
+        sample = data[index]
+        image = sample["image"]
+        iw, ih = Image.open(image).size
+        for i in range(11):
+            resize = True if np.random.rand() < resize_rate else False
+            if resize:
+                cw, ch = crop_size
+            else:
+                cw, ch = output_size
+            if iw < cw  or ih < ch:
+                continue
+            x = int((iw - cw)*np.random.rand())
+            y = int((ih - ch)*np.random.rand())
+            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+0.8*b[2] < x+cw and b[1]+0.8*b[3] < y+ch]
+            if len(boxes) == 0:
+                continue
+            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize})
+            if len(result) % 100 == 0:
+                print("croped %d samples" % len(result))
+            if len(result) > num_sample:
+                break
+    return result
+
+
 def load_data(root=dataset_dir):
     """WIDERFace: http://mmlab.ie.cuhk.edu.hk/projects/WIDERFace/
     """
