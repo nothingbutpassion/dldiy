@@ -135,7 +135,7 @@ def crop(data, num_sample, crop_size):
                 break
     return result
 
-def transform(data, num_sample, crop_size, output_size, resize_rate=0.5):
+def transform(data, num_sample, crop_size, output_size, resize_rate=0.5, flip_rate=0.5):
     result = []
     while (len(result) < num_sample):
         index = min(len(data)-1, int(np.random.rand()*len(data)))
@@ -155,7 +155,8 @@ def transform(data, num_sample, crop_size, output_size, resize_rate=0.5):
             boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+0.8*b[2] < x+cw and b[1]+0.8*b[3] < y+ch]
             if len(boxes) == 0:
                 continue
-            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize})
+            flip = True if np.random.rand() < flip_rate else False
+            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize, "flip": flip})
             if len(result) % 100 == 0:
                 print("croped %d samples" % len(result))
             if len(result) > num_sample:

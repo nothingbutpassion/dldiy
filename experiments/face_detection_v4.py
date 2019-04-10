@@ -111,7 +111,10 @@ def test_codec():
         if sample["resize"]:
             image, boxes = imgkit.resize(image, image_size, boxes)
             print("resized boxes: " + str(boxes))
-        w, h = image_size
+        if sample["flip"]:
+            image, boxes = imgkit.flip(image, boxes)
+            print("fliped boxes: " + str(boxes))
+        w, h = image.size
         # print("before encode: boxes=%s" % str(boxes))
         boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
         features = encode(boxes)
@@ -198,13 +201,13 @@ def load_modle(model_path):
         "localization_loss": localization_loss,
         "precision": precision,
         "recall": recall},
-        compile=False)
-    trainable = False
-    for layer in model.layers:
-        if layer.name == "block_12_add":
-            trainable = True
-        layer.trainable = trainable
-    model.compile(optimizer=optimizers.Adagrad(), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
+        compile=True)
+    # trainable = False
+    # for layer in model.layers:
+    #     if layer.name == "block_12_add":
+    #         trainable = True
+    #     layer.trainable = trainable
+    # model.compile(optimizer=optimizers.Adagrad(), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
     model.summary()
     return model
 
@@ -236,6 +239,8 @@ class DataGenerator(utils.Sequence):
             boxes = np.array(sample["boxes"])
             if sample["resize"]:
                 image, boxes = imgkit.resize(image, (w, h), boxes)
+            if sample["flip"]:
+                image, boxes = imgkit.flip(image, boxes)
             boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
             batch_x[i-start_index] = (np.array(image) - 127.5)/255
             batch_y[i-start_index] = encode(boxes)
@@ -295,8 +300,8 @@ def predict_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_0.h5"
-    # modle = load_modle(model_path)
-    model = build_modle()
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_260.h5"
+    model = load_modle(model_path)
+    # model = build_modle()
     train_model(model, model_path)
     predict_model(model)

@@ -34,3 +34,17 @@ def resize(image, size, boxes=None):
         return image
     boxes = np.array([[b[0]*sx, b[1]*sy, b[2]*sx, b[3]*sy] for b in boxes])
     return image, boxes
+
+# flag can be one of the following:
+# Image.FLIP_LEFT_RIGHT
+# Image.FLIP_TOP_BOTTOM
+def flip(image, boxes=None, flag=Image.FLIP_LEFT_RIGHT):
+    image = image.transpose(flag)
+    if boxes is None:
+        return image
+    w, h = image.size
+    if flag == Image.FLIP_LEFT_RIGHT:
+        boxes = np.array([[w-1-b[0]-b[2], b[1], b[2], b[3]] for b in boxes])
+    else:
+        boxes = np.array([[b[0], h-1-b[1]-b[3], b[2], b[3]] for b in boxes])
+    return image, boxes
