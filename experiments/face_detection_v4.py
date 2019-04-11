@@ -300,7 +300,7 @@ def predict_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_260.h5"
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_520.h5"
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)
