@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/.." )
 import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 
+tf = tensorflow
 models = tensorflow.keras.models
 layers = tensorflow.keras.layers
 optimizers = tensorflow.keras.optimizers
@@ -125,17 +126,26 @@ def object_loss(y_true, y_pred):
     p1 = y_true[:,:,:,0]
     p2 = y_pred[:,:,:,0]
     epsilon = 1e-7
-    object_loss = - p1*K.log(p2+epsilon) - 0.5*(1-p1)*K.log(1-p2+epsilon)
+    positive_num = tf.math.reduce_sum(tf.cast(p1 > 0.5, tf.int32))
+    positive_loss = -p1*K.log(p2+epsilon)
+    negative_loss = -(1-p1)*K.log(1-p2+epsilon)
+    negative_loss, _ = tf.math.top_k(tf.reshape(negative_loss, (-1,)), 3*positive_num)
+    object_loss = K.sum(positive_loss) + K.sum(negative_loss)
     return K.sum(object_loss)
 
 def detect_loss(y_true, y_pred):
     p1, x1, y1, w1, h1 = [y_true[:,:,:,i] for i in range(5)]
     p2, x2, y2, w2, h2 = [y_pred[:,:,:,i] for i in range(5)]
     epsilon = 1e-7
-    object_loss = - p1*K.log(p2+epsilon) - 0.5*(1-p1)*K.log(1-p2+epsilon)
+    positive_num = tf.math.reduce_sum(tf.cast(p1 > 0.5, tf.int32))
+    positive_loss = -p1*K.log(p2+epsilon)
+    negative_loss = -(1-p1)*K.log(1-p2+epsilon)
+    negative_loss, _ = tf.math.top_k(tf.reshape(negative_loss, (-1,)), 3*positive_num)
+    object_loss = K.sum(positive_loss) + K.sum(negative_loss)
     location_loss = K.square(x1-x2) + K.square(y1-y2) + 10*K.square(w1-w2) + 10*K.square(h1-h2)
     location_loss *= K.cast(p1 > 0.5, dtype='float32')
-    return K.sum(object_loss) + 10*K.sum(location_loss)
+    location_loss = 10*K.sum(location_loss)
+    return object_loss + location_loss
 
 # NOTES:
 # Precision = TP/(TP + FP)
@@ -228,7 +238,8 @@ def train_model(model, train_data, image_size, feature_shape, num_sample, batch_
     pos=save_file.rfind('_')
     start = int(save_file[pos+1: len(save_file)-3])+1
     for i in range(1, 1111):
-        model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
+        #model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
+        model.fit_generator(generator, epochs=20)
         model.save(save_file[:pos+1] + str(start + i*20) + ".h5")
 
 def predict_model(model, val_data, image_size, feature_shape):
@@ -283,15 +294,15 @@ def test_model():
     batch_size=64
 
     # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v5_761.h5"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v2_760.h5"
     model=load_model(model_file)
-    #model=build_model()
+    # model=build_model()
 
     # load widerface data
     data = widerface.load_data()
 
     # train model
-    # train_model(model, data[0], image_size, feature_shape, num_sample, batch_size, model_file)
+    train_model(model, data[0], image_size, feature_shape, num_sample, batch_size, model_file)
 
     # predict model
     predict_model(model, data[1], image_size, feature_shape)
