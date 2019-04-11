@@ -4,6 +4,7 @@ import numpy as np
 import PIL.Image as Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import tensorflow as tf
 from tensorflow.keras import models
 from tensorflow.keras import layers
 from tensorflow.keras import utils
@@ -141,9 +142,13 @@ def recall(y_true, y_pred):
     return K.sum(TP)/(K.sum(TP) + K.sum(FN) + epsilon)
 
 def confidence_loss(y_true, y_pred):
-    m = K.cast(y_true[:,:,0] > 0, dtype='float32')
     c = K.softmax(y_pred[:,:,:2])
-    return K.sum(-y_true[:,:,0]*K.log(c[:,:,0]) - y_true[:,:,1]*K.log(c[:,:,1]))/K.sum(m)
+    # NOTES: pos_num MUST NOT be 0 in training
+    pos_num = tf.math.reduce_sum(tf.cast(y_true[:,:,0] > 0.5, tf.int32))
+    pos_loss = -y_true[:,:,0]*K.log(c[:,:,0])
+    neg_loss = -y_true[:,:,1]*K.log(c[:,:,1])
+    neg_loss, _ = tf.math.top_k(tf.reshape(neg_loss, (-1,)), 3*pos_num)
+    return (K.sum(pos_loss) + K.sum(neg_loss))/tf.cast(pos_num, tf.float32)
 
 # Smooth L1-loss: 
 # f(x) = 0.5*x^2 		if abs(x) <= 1  (Similar to L2-loss)
@@ -154,7 +159,7 @@ def smooth_l1_loss(x):
     return K.sum(0.5*x*x*m + (abs_x - 0.5)*(1-m))
 
 def localization_loss(y_true, y_pred):
-    m = K.cast(y_true[:,:,0] > 0, dtype='float32')
+    m = K.cast(y_true[:,:,0] > 0.5, dtype='float32')
     d = y_true[:,:,2:] - y_pred[:,:,2:]
     l1_loss = smooth_l1_loss(m*d[:,:,0]) + smooth_l1_loss(m*d[:,:,1]) + smooth_l1_loss(m*d[:,:,2]) + smooth_l1_loss(m*d[:,:,3])
     return l1_loss
