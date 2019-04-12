@@ -52,7 +52,7 @@ def load_tflite(tflite_file):
     output_data = interpreter.get_tensor(output_details[0]['index'])
 
 
-def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -70,7 +70,7 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]

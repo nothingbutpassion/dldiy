@@ -41,7 +41,7 @@ def generate_dboxes(scale, size, aspects):
 # Each box in gboxes is a tuple with 4 value: bx, by, bw, bh
 # bx, by is the center point of the box (nomalized to image size)
 # bw, by is the width, heigh of the box (nomalized to image size)
-def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     dboxes = []
     for i in range(len(scales)):
         dboxes.append(generate_dboxes(scales[i], sizes[i], aspects))
@@ -69,7 +69,7 @@ def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1
             # print("encode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
     return features
 
-def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -88,7 +88,7 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     return [dx, dy, dw, dh]
 
 
-def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[1.0, 1.5, 2.0]):
+def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
@@ -108,6 +108,7 @@ def test_codec():
     for sample in data:
         image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
         boxes = np.array(sample["boxes"])
+        print("image: " + sample["image"])
         print("croped boxes: " + str(boxes))
         if sample["resize"]:
             image, boxes = imgkit.resize(image, image_size, boxes)
@@ -261,8 +262,9 @@ def train_model(model, save_path=None):
     data = widerface.load_data()
     data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
     for i in range(1111):
-        data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
-        generator = DataGenerator(data, image_size, feture_shape, batch_size)
+        if i % 11 == 0:
+            data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
+            generator = DataGenerator(data, image_size, feture_shape, batch_size)
         model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
         if save_path != None:
             p = save_path.rfind('_')
@@ -305,7 +307,7 @@ def predict_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_520.h5"
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_660.h5"
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)

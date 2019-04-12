@@ -93,22 +93,25 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
     for sample in data:
         image = sample["image"]
         bboxes = []
-        for boxes in sample["boxes"]:
-            box = [float(s) for s in boxes[:4]]
-            attributes = boxes[4:]
+        zeros = 0
+        for box in sample["boxes"]:
+            b = [float(s) for s in box[:4]]
+            attributes = box[4:]
             requirements = [blur, expression, illumination, invalid, occlusion, pose]
             passed = True
             for i in range(len(attributes)):
                 if requirements[i] and not (attributes[i] in requirements[i]):
                     passed = False
                     break
+            if not passed:
+                continue
             # NOTES:
             # some box' w, h is 0 (or too small), should exclude
-            if box[2] < min_size or box[3] < min_size:
-                passed = False 
-            if passed:
-                bboxes.append(box)
-        if len(bboxes) == len(sample["boxes"]):
+            if b[2] < 1 or b[3] < 1:
+                zeros += 1
+            if b[2] >= min_size and b[3] >= min_size:
+                bboxes.append(b)
+        if len(bboxes) > 0 and len(bboxes) == len(sample["boxes"]) - zeros:
             result.append({"image": image, "boxes": bboxes})
     return result
 
@@ -137,8 +140,9 @@ def crop(data, num_sample, crop_size):
 
 def transform(data, num_sample, crop_size, output_size, resize_rate=0.5, flip_rate=0.5):
     result = []
+    index = int(np.random.rand()*len(data))
     while (len(result) < num_sample):
-        index = min(len(data)-1, int(np.random.rand()*len(data)))
+        index = index+1 if index < len(data)-1 else 0 
         sample = data[index]
         image = sample["image"]
         iw, ih = Image.open(image).size
@@ -152,15 +156,15 @@ def transform(data, num_sample, crop_size, output_size, resize_rate=0.5, flip_ra
                 continue
             x = int((iw - cw)*np.random.rand())
             y = int((ih - ch)*np.random.rand())
-            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in sample["boxes"] if b[0] > x and b[1] > y and b[0]+0.8*b[2] < x+cw and b[1]+0.8*b[3] < y+ch]
-            if len(boxes) == 0:
+            candidates = [b for b in sample["boxes"] if x < b[0]+b[2]/2 and b[0]+b[2]/2 < x+cw and y < b[1]+b[3]/2 and b[1]+b[3]/2 < y+ch]
+            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in candidates if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
+            if len(candidates) == 0 or len(candidates) != len(boxes):
                 continue
             flip = True if np.random.rand() < flip_rate else False
             result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize, "flip": flip})
             if len(result) % 100 == 0:
                 print("croped %d samples" % len(result))
-            if len(result) > num_sample:
-                break
+            break
     return result
 
 
