@@ -92,11 +92,14 @@ def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], 
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
-        if c0 > c1:
+        max_c = max(c0, c1)
+        c0, c1 = c0 - max_c, c1 - max_c
+        c = np.exp(c0-max_c)/(np.exp(c0-max_c) + np.exp(c1-max_c))
+        if c > 0.28:
             dx, dy, dw, dh = get_dbox(i)
             gx, gy, gw, gh = x*dw+dx, y*dh+dy, np.exp(w)*dw, np.exp(h)*dh
             # print("decode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
-            boxes.append([gx, gy, gw, gh])
+            boxes.append([gx, gy, gw, gh, c])
     return boxes
 
 def test_codec():
@@ -261,14 +264,14 @@ def train_model(model, save_path=None):
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
     data = widerface.load_data()
     data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
+    data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
+    generator = DataGenerator(data, image_size, feture_shape, batch_size)
     for i in range(1111):
-        if i % 11 == 0:
-            data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
-            generator = DataGenerator(data, image_size, feture_shape, batch_size)
         model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
         if save_path != None:
             p = save_path.rfind('_')
             n = int(save_path[p+1: len(save_path)-3])
+            print("save model for epochs " + str(n + i*20))
             model.save(save_path[:p+1] + str(n + i*20) + ".h5")
 
 def predict_model(model):
@@ -292,22 +295,22 @@ def predict_model(model):
         boxes = decode(batch_y[i])
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
         for box in boxes:
-            (x, y, w, h) = box
+            (x, y, w, h) = box[:4]
             print("Sample %d, true_box=(%d,%d,%d,%d)" % (i, x, y, w, h))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='g', facecolor='none')
             ax.add_patch(rect)
         # predicted bounding boxes
         boxes = decode(y_pred[i])
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         for box in boxes:
-            (x, y, w, h) = box
-            print("Sample %d, predicted_box=(%d,%d,%d,%d)" % (i, x, y, w, h))
+            (x, y, w, h, c) = box
+            print("Sample %d, predicted_box=(%d,%d,%d,%d) confidence: %f" % (i, x, y, w, h, c))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_660.h5"
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.h5"
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)

@@ -70,16 +70,45 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def decode(features, threshold=0.3, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
-        if c0 > c1:
+        max_c = max(c0, c1)
+        c0, c1 = c0 - max_c, c1 - max_c
+        c = np.exp(c0-max_c)/(np.exp(c0-max_c) + np.exp(c1-max_c))
+        if c > threshold:
             dx, dy, dw, dh = get_dbox(i)
             gx, gy, gw, gh = x*dw+dx, y*dh+dy, np.exp(w)*dw, np.exp(h)*dh
-            # print("decode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
-            boxes.append([gx, gy, gw, gh])
+            print("decode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
+            boxes.append([gx, gy, gw, gh, c])
     return boxes
+
+def iou(box1, box2):
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    w = max(0, min(x1+w1/2, x2+w2/2) - max(x1-w1/2, x2-w2/2))
+    h = max(0, min(y1+h1/2, y2+h2/2) - max(y1-h1/2, y2-h2/2))
+    I = w*h
+    U = w1*h1 + w2*h2 - I
+    return I/U
+
+def nms(boxes, threshold=0.01):
+    candidates = boxes
+    selected = []
+    while len(candidates) > 0:
+        scores = [b[4] for b in candidates]
+        max_score_index = np.argmax(scores)
+        b = candidates[max_score_index]
+        selected.append(b)
+        del candidates[max_score_index]
+        i = 0
+        while i < len(candidates):
+            if iou(b[:4], candidates[i][:4]) > threshold:
+                del candidates[i]
+                i -= 1
+            i += 1
+    return selected
 
 class Detector(object):
     def __init__(self, tflite_file):
@@ -106,8 +135,9 @@ class Detector(object):
         self.interpreter.invoke()
         features = self.interpreter.get_tensor(self.output_index)
         features = features.reshape(features.shape[1:])
-        boxes = decode(features)
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        boxes = decode(features, 0.2)
+        boxes = nms(boxes)
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         return boxes
 
 
@@ -120,16 +150,16 @@ def test_detection(tflite_file):
             break
         boxes = detector.detect(img)
         for box in boxes:
-            (x, y, w, h) = box
-            print("detected box: " + str(box))
-            cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(x+y)), (0,255,0), 2)
+            (x, y, w, h, p) = box
+            print("detected box: %s, confidence: %f " % (str(box), p))
+            cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0,255,0), 2)
         cv2.imshow("Image", img)
         if cv2.waitKey(20) == ord('q'):
             break
 
 if __name__ == "__main__":
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_520.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_520.tflite"
+    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.h5"
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.tflite"
     custom_objects = {
         "detection_loss": detection_loss, 
         "confidence_loss": confidence_loss, 
@@ -137,5 +167,5 @@ if __name__ == "__main__":
         "precision": precision,
         "recall": recall
     }
-    # keras_to_tflite_v1(keras_file, tflite_file, custom_objects)
+    keras_to_tflite_v1(keras_file, tflite_file, custom_objects)
     test_detection(tflite_file)
