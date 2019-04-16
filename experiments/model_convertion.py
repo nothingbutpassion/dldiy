@@ -135,7 +135,7 @@ class Detector(object):
         self.interpreter.invoke()
         features = self.interpreter.get_tensor(self.output_index)
         features = features.reshape(features.shape[1:])
-        boxes = decode(features, 0.2)
+        boxes = decode(features, 0.5)
         boxes = nms(boxes)
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         return boxes
@@ -158,8 +158,8 @@ def test_detection(tflite_file):
             break
 
 if __name__ == "__main__":
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.tflite"
+    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1260.h5"
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1260.tflite"
     custom_objects = {
         "detection_loss": detection_loss, 
         "confidence_loss": confidence_loss, 

@@ -259,14 +259,14 @@ def train_model(model, save_path=None):
     crop_size = (240, 180)
     image_size = (160, 160)
     resize_rate = 0.8
-    sample_num = 6400
+    sample_num = 32000
     batch_size = 64
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
     data = widerface.load_data()
     data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
     data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
     generator = DataGenerator(data, image_size, feture_shape, batch_size)
-    for i in range(1111):
+    for i in range(1, 1111):
         model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
         if save_path != None:
             p = save_path.rfind('_')
@@ -310,7 +310,7 @@ def predict_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_880.h5"
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1260.h5"
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)
