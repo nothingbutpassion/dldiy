@@ -158,8 +158,8 @@ def test_detection(tflite_file):
             break
 
 if __name__ == "__main__":
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1260.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1260.tflite"
+    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1380.h5"
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1380.tflite"
     custom_objects = {
         "detection_loss": detection_loss, 
         "confidence_loss": confidence_loss, 
