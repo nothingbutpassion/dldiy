@@ -3,6 +3,13 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
+g_scales = [0.3, 0.5, 0.7, 0.9]
+g_sizes = [[10,10], [5,5], [3,3], [1,1]]
+
+# NOTES: 
+# v4 model use [0.5, 1.0, 1.5] 
+g_aspects = [0.5, 0.8, 1.0]                
+
 def recall(y_true, y_pred):
     return tf.keras.backend.sum(y_true-y_pred)
 def precision(y_true, y_pred):
@@ -35,24 +42,8 @@ def keras_to_tflite_v2(keras_file, tflite_file, custom_objects):
     tflite_model = converter.convert()
     open(tflite_file, "wb").write(tflite_model)
 
-def load_tflite(tflite_file):
-    # Load TFLite model and allocate tensors.
-    interpreter = tf.lite.Interpreter(model_path=tflite_file)
-    interpreter.allocate_tensors()
-    # Get input and output tensors.
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-    # Test model on random input data.
-    
-    input_data = np.array(np.random.random_sample(input_shape), dtype=np.float32)
-    interpreter.set_tensor(input_details[0]['index'], input_data)
-    # Invoke forward inference
-    interpreter.invoke()
-    # Get output (numpy array) tensor
-    output_data = interpreter.get_tensor(output_details[0]['index'])
 
-
-def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -70,7 +61,7 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-def decode(features, threshold=0.3, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def decode(features, threshold=0.3, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
@@ -158,8 +149,8 @@ def test_detection(tflite_file):
             break
 
 if __name__ == "__main__":
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1380.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1380.tflite"
+    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.h5"
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite"
     custom_objects = {
         "detection_loss": detection_loss, 
         "confidence_loss": confidence_loss, 

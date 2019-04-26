@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 import numpy as np
 import PIL.Image as Image
 import matplotlib.pyplot as plt
@@ -16,6 +17,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/.." )
 import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 
+# model params
+g_scales = [0.3, 0.5, 0.7, 0.9]
+g_sizes = [[10,10], [5,5], [3,3], [1,1]]
+g_aspects = [0.5, 1.0, 1.5]
 
 def iou(box1, box2):
     x1, y1, w1, h1 = box1
@@ -41,7 +46,7 @@ def generate_dboxes(scale, size, aspects):
 # Each box in gboxes is a tuple with 4 value: bx, by, bw, bh
 # bx, by is the center point of the box (nomalized to image size)
 # bw, by is the width, heigh of the box (nomalized to image size)
-def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def encode(gboxes, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     dboxes = []
     for i in range(len(scales)):
         dboxes.append(generate_dboxes(scales[i], sizes[i], aspects))
@@ -69,7 +74,7 @@ def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1
             # print("encode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
     return features
 
-def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -88,7 +93,7 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     return [dx, dy, dw, dh]
 
 
-def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def decode(features, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
@@ -103,11 +108,12 @@ def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], 
     return boxes
 
 def test_codec():
-    crop_size = (240, 180 )
+    crop_sizes = [(240, 180), (180, 240)]
     image_size = (160, 160)
     data = widerface.load_data()
     data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    data = widerface.transform(data, 100, crop_size, image_size, 0.5)
+    data = widerface.transform(data, 11, crop_sizes[0], image_size, 0.5) + widerface.transform(data, 11, crop_sizes[1], image_size, 0.5)
+    random.shuffle(data)
     for sample in data:
         image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
         boxes = np.array(sample["boxes"])
@@ -256,23 +262,27 @@ class DataGenerator(utils.Sequence):
         return batch_x, batch_y
 
 def train_model(model, save_path=None):
-    crop_size = (240, 180)
+    crop_sizes = [(240, 180), (320,180), (180, 320), (180, 240)]
     image_size = (160, 160)
-    resize_rate = 1.0
-    sample_num = 32000
+    resize_rate = 0.8
+    sample_num = 6400
     batch_size = 64
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
+    epochs = 10
     data = widerface.load_data()
     data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
-    generator = DataGenerator(data, image_size, feture_shape, batch_size)
+    train_data = []
+    for crop_size in crop_sizes:
+        train_data += widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
+    random.shuffle(train_data)
+    generator = DataGenerator(train_data, image_size, feture_shape, batch_size)
     for i in range(1, 1111):
-        model.fit_generator(generator, epochs=10, workers=2, use_multiprocessing=True, shuffle=True)
+        model.fit_generator(generator, epochs=epochs, workers=2, use_multiprocessing=True, shuffle=True)
         if save_path != None:
             p = save_path.rfind('_')
             n = int(save_path[p+1: len(save_path)-3])
-            print("save model for epochs " + str(n + i*20))
-            model.save(save_path[:p+1] + str(n + i*20) + ".h5")
+            print("save model for epochs " + str(n + i*epochs))
+            model.save(save_path[:p+1] + str(n + i*epochs) + ".h5")
 
 def predict_model(model):
     crop_size = (240, 180)
@@ -310,7 +320,7 @@ def predict_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_1380.h5"
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_2100.h5"
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)
