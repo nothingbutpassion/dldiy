@@ -1,31 +1,236 @@
 import os
 import sys
-import pickle
+import random
 import numpy as np
+import PIL.Image as Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import PIL.Image as Image
-import tensorflow
-import cv2
+import tensorflow as tf
+from tensorflow.keras import models
+from tensorflow.keras import layers
+from tensorflow.keras import utils
+from tensorflow.keras import optimizers
+from tensorflow.keras import backend as K
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/.." )
 import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 
-tf = tensorflow
-models = tensorflow.keras.models
-layers = tensorflow.keras.layers
-optimizers = tensorflow.keras.optimizers
-utils = tensorflow.keras.utils
-K = tensorflow.keras.backend
+# model params
+g_scales = [0.3, 0.5, 0.7, 0.9]
+g_sizes = [[10,10], [5,5], [3,3], [1,1]]
+g_aspects = [0.5, 1.0, 1.5]
+
+def iou(box1, box2):
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    w = max(0, min(x1+w1/2, x2+w2/2) - max(x1-w1/2, x2-w2/2))
+    h = max(0, min(y1+h1/2, y2+h2/2) - max(y1-h1/2, y2-h2/2))
+    I = w*h
+    U = w1*h1 + w2*h2 - I
+    return I/U
+
+def generate_dboxes(scale, size, aspects):
+    rows, cols = size
+    dboxes = np.zeros((rows, cols, len(aspects), 4))
+    for i in range(rows):
+        for j in range(cols):
+            for k in range(len(aspects)):
+                bx, by, bw, bh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
+                dboxes[i,j,k,:] = [bx, by, bw, bh]
+    dboxes = dboxes.reshape(-1, 4)
+    return dboxes
 
 # NOTES:
-# custom generator must extends keras.utils.Sequence
-# output_size: W, H
-# feature_shape: H, W, C
+# Each box in gboxes is a tuple with 4 value: bx, by, bw, bh
+# bx, by is the center point of the box (nomalized to image size)
+# bw, by is the width, heigh of the box (nomalized to image size)
+def encode(gboxes, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+    dboxes = []
+    for i in range(len(scales)):
+        dboxes.append(generate_dboxes(scales[i], sizes[i], aspects))
+    dboxes = np.concatenate(dboxes)
+    features = np.zeros((dboxes.shape[0], 6))
+    features[:,:2] = [0, 1]
+    # For each ground truth box, match a default box with max IOU
+    for gb in gboxes:
+        ious = [iou(gb, db) for db in dboxes]
+        i = np.argmax(ious)
+        dx, dy, dw, dh = dboxes[i]
+        gx, gy, gw, gh = gb
+        features[i] = [1, 0] + [(gx-dx)/dw, (gy-dy)/dh, np.log(gw/dw), np.log(gh/dh)]
+        # print("encode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
+    # For each default box, match a groud truth box with IOU > 0.5
+    for i in range(len(dboxes)):
+        if features[i][0] > 0:
+            continue
+        gbs = [gb for gb in gboxes if iou(gb, dboxes[i]) > 0.5]
+        if len(gbs) > 0:
+            ious = [iou(gb, dboxes[i]) for gb in gbs]
+            dx, dy, dw, dh = dboxes[i]
+            gx, gy, gw, gh = gbs[np.argmax(ious)]
+            features[i] = [1, 0] + [(gx-dx)/dw, (gy-dy)/dh, np.log(gw/dw), np.log(gh/dh)]
+            # print("encode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
+    return features
+
+def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+    aspect_num = len(aspects)
+    feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
+    for i in range(1, len(feature_nums)):
+        feature_nums[i] += feature_nums[i-1]
+    i = 0
+    while feature_index >= feature_nums[i]:
+        i += 1
+    if i > 0:
+        feature_index -= feature_nums[i-1]
+    rows, cols = sizes[i]
+    scale = scales[i]
+    i = feature_index//(cols*aspect_num)
+    j = (feature_index - i*cols*aspect_num)//aspect_num
+    k = feature_index - i*cols*aspect_num - j*aspect_num
+    dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
+    return [dx, dy, dw, dh]
+
+
+def decode(features, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+    boxes = []
+    for i in range(len(features)):
+        c0, c1, x, y, w, h = features[i]
+        max_c = max(c0, c1)
+        c0, c1 = c0 - max_c, c1 - max_c
+        c = np.exp(c0-max_c)/(np.exp(c0-max_c) + np.exp(c1-max_c))
+        if c > 0.28:
+            dx, dy, dw, dh = get_dbox(i)
+            gx, gy, gw, gh = x*dw+dx, y*dh+dy, np.exp(w)*dw, np.exp(h)*dh
+            # print("decode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
+            boxes.append([gx, gy, gw, gh, c])
+    return boxes
+
+def test_codec():
+    crop_sizes = [(240, 180), (180, 240)]
+    image_size = (160, 160)
+    data = widerface.load_data()
+    data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
+    data = widerface.transform(data, 11, crop_sizes[0], image_size, 0.5) + widerface.transform(data, 11, crop_sizes[1], image_size, 0.5)
+    random.shuffle(data)
+    for sample in data:
+        image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
+        boxes = np.array(sample["boxes"])
+        print("image: " + sample["image"])
+        print("croped boxes: " + str(boxes))
+        if sample["resize"]:
+            image, boxes = imgkit.resize(image, image_size, boxes)
+            print("resized boxes: " + str(boxes))
+        if sample["flip"]:
+            image, boxes = imgkit.flip(image, boxes)
+            print("fliped boxes: " + str(boxes))
+        w, h = image.size
+        # print("before encode: boxes=%s" % str(boxes))
+        boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
+        features = encode(boxes)
+        boxes=decode(features)
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        # print("after decode: boxes=%s" % str(boxes))
+        imgkit.draw_boxes(image, boxes, color=(0,255,0))
+        plt.imshow(image)
+        plt.show()
+
+def precision(y_true, y_pred):
+    c = K.softmax(y_pred[:,:,:2])
+    P = K.cast(c[:,:,0] > 0.5, dtype='float32')
+    TP = K.cast(y_true[:,:,0] > 0.5, dtype='float32')*P
+    epsilon = 1e-7
+    return K.sum(TP)/(K.sum(P) + epsilon)
+
+def recall(y_true, y_pred):
+    c = K.softmax(y_pred[:,:,:2])
+    P = K.cast(y_true[:,:,0] > 0.5, dtype='float32')
+    TP = K.cast(c[:,:,0] > 0.5, dtype='float32')*P
+    FN = K.cast(c[:,:,1] > 0.5, dtype='float32')*P
+    epsilon = 1e-7
+    return K.sum(TP)/(K.sum(TP) + K.sum(FN) + epsilon)
+
+def confidence_loss(y_true, y_pred):
+    c = K.softmax(y_pred[:,:,:2])
+    # NOTES: pos_num MUST NOT be 0 in training
+    pos_num = tf.math.reduce_sum(tf.cast(y_true[:,:,0] > 0.5, tf.int32))
+    pos_loss = -y_true[:,:,0]*K.log(c[:,:,0])
+    neg_loss = -y_true[:,:,1]*K.log(c[:,:,1])
+    neg_loss, _ = tf.math.top_k(tf.reshape(neg_loss, (-1,)), 3*pos_num)
+    return (K.sum(pos_loss) + K.sum(neg_loss))/tf.cast(pos_num, tf.float32)
+
+# Smooth L1-loss: 
+# f(x) = 0.5*x^2 		if abs(x) <= 1  (Similar to L2-loss)
+# f(x) = abs(x) - 0.5 	if abs(x) > 1	(Similar to L1-loss)
+def smooth_l1_loss(x):
+    abs_x = K.abs(x)
+    m = K.cast(abs_x <= 1, dtype='float32')
+    return K.sum(0.5*x*x*m + (abs_x - 0.5)*(1-m))
+
+def localization_loss(y_true, y_pred):
+    m = K.cast(y_true[:,:,0] > 0.5, dtype='float32')
+    d = y_true[:,:,2:] - y_pred[:,:,2:]
+    l1_loss = smooth_l1_loss(m*d[:,:,0]) + smooth_l1_loss(m*d[:,:,1]) + smooth_l1_loss(m*d[:,:,2]) + smooth_l1_loss(m*d[:,:,3])
+    return l1_loss
+
+def detection_loss(y_true, y_pred):
+    return confidence_loss(y_true, y_pred) + localization_loss(y_true, y_pred)
+
+def build_modle():
+    base = MobileNetV2(input_shape=(160, 160, 3), alpha=0.5, include_top=False)
+    trainable = False
+    for layer in base.layers:
+        if layer.name == "block_12_add":
+            trainable = True
+        layer.trainable = trainable
+    # (10, 10, 288) -> (10, 10, 3*6)
+    x1 = base.get_layer("block_13_expand_relu")
+    x1 = layers.SeparableConv2D(256, 1, padding="same", activation="relu")(x1.output)
+    x1 = layers.Conv2D(3*6, 3, padding="same")(x1)
+    x1 = layers.Reshape((3*10*10, 6))(x1)
+    # (5, 5, 480) -> (5, 5, 3*6)
+    x2 = base.get_layer("block_14_expand_relu")
+    x2 = layers.SeparableConv2D(256, 1, padding="same", activation="relu")(x2.output)
+    x2 = layers.Conv2D(3*6, 3, padding="same")(x2)
+    x2 = layers.Reshape((3*5*5, 6))(x2)
+    # (5, 5, 480) -> (3, 3, 3*6)
+    x3 = base.get_layer("block_15_expand_relu")
+    x3 = layers.SeparableConv2D(256, 1, padding="same", activation="relu")(x3.output)
+    x3 = layers.Conv2D(3*6, 3, padding="valid")(x3)
+    x3 = layers.Reshape((3*3*3, 6))(x3)
+    # (5, 5, 480) -> (3, 3, 256) -> (1, 1, 3*6)
+    x4 = base.get_layer("block_16_expand_relu")
+    x4 = layers.SeparableConv2D(256, 3, padding="valid", activation="relu")(x4.output)
+    x4 = layers.Conv2D(3*6, 3, padding="valid")(x4)
+    x4 = layers.Reshape((3*1*1, 6))(x4)
+    model = models.Model(inputs=base.input, outputs=layers.Concatenate(axis=1)([x1,x2,x3,x4]))
+    model.compile(optimizer=optimizers.SGD(lr=0.001, momentum=0.9, decay=0.00005), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
+    model.summary()
+    return model
+
+def load_modle(model_path):
+    model = models.load_model(model_path, custom_objects={
+        "detection_loss": detection_loss, 
+        "confidence_loss": confidence_loss, 
+        "localization_loss": localization_loss,
+        "precision": precision,
+        "recall": recall},
+        compile=True)
+    # trainable = False
+    # for layer in model.layers:
+    #     if layer.name == "block_12_add":
+    #         trainable = True
+    #     layer.trainable = trainable
+    # model.compile(optimizer=optimizers.Adagrad(), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
+    model.summary()
+    return model
+
+
 class DataGenerator(utils.Sequence):
-    def __init__(self, data, output_size, feature_shape, batch_size):
+    def __init__(self, data, image_size, feature_shape, batch_size):
         self.data = data
-        self.output_size = output_size
+        self.image_size = image_size
         self.feature_shape = feature_shape
         self.batch_size = batch_size
     def __len__(self):
@@ -39,274 +244,84 @@ class DataGenerator(utils.Sequence):
         if start_index >= len(self.data):
             raise IndexError()
         end_index = min(start_index + self.batch_size, len(self.data))
-        # NOTES
-        # batch_x.shape: N, H, W, C
-        # batch_y.shape: N, H, W, C
         batch_size = end_index - start_index
-        batch_x = np.zeros((batch_size, self.output_size[1], self.output_size[0], 3))
+        w, h = self.image_size
+        batch_x = np.zeros((batch_size, h, w, 3))
         batch_y = np.zeros((batch_size,) + self.feature_shape)
         for i in range(start_index, end_index):
             sample = self.data[i]
             image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
             boxes = np.array(sample["boxes"])
+            if sample["resize"]:
+                image, boxes = imgkit.resize(image, (w, h), boxes)
+            if sample["flip"]:
+                image, boxes = imgkit.flip(image, boxes)
+            boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
             batch_x[i-start_index] = (np.array(image) - 127.5)/255
-            batch_y[i-start_index] = encode(self.output_size, boxes, self.feature_shape)
+            batch_y[i-start_index] = encode(boxes)
         return batch_x, batch_y
 
-def iou(oh, ow, box1, box2=[0.5, 0.5, 1.0, 1.0]):
-    x1, y1, w1, h1 = box1
-    w1, h1 = ow*w1, oh*h1
-    x2, y2, w2, h2 = box2
-    x11, x12, y11, y12  = x1-w1/2, x1+w1/2, y1-h1/2, y1+h1/2
-    x21, x22, y21, y22  = x2-w2/2, x2+w2/2, y2-h2/2, y2+h2/2
-    max_x, max_y = max(x11, x21), max(y11, y21)
-    min_x, min_y = min(x12, x22), min(y12, y22)
-    assert(min_x > max_x and min_y > max_y)
-    I = (min_x - max_x)*(min_y - max_y)
-    U = w1*h1 + w2*h2 - I
-    return I/U
-
-# NOTES:
-# image_size    = (width, height)
-# feature_shape = (height, width, channel)
-def encode(image_size, boxes, feature_shape):
-    result = np.zeros(feature_shape)
-    iw, ih = image_size
-    oh, ow, oc = feature_shape
-    sh, sw = float(oh)/ih, float(ow)/iw
-    for box in boxes:
-        x, y, w, h = box
-        cx, cy = sw*(x+w/2), sh*(y+h/2)
-        i, j = int(cx), int(cy)    
-        bx, by = cx-i, cy-j
-        bw, bh = float(w)/iw, float(h)/ih
-        if result[j,i,0] > 0 and iou(oh, ow, [bx, by, bw, bh]) > iou(oh, ow, result[j,i,1:]):
-            result[j,i,:]=(1, bx, by, bw, bh)
-        else:
-            result[j,i,:]=(1, bx, by, bw, bh)
-        if bx < 0.01 and i > 0:
-            if result[j,i-1,0] > 0 and iou(oh, ow, [1-bx, by, bw, bh]) > iou(oh, ow, result[j,i-1,1:]):
-                result[j,i-1,:]=(1-bx, 1-bx, by, bw, bh)
-            else:
-                result[j,i-1,:]=(1-bx, 1-bx, by, bw, bh)
-        if bx > 0.99 and i < ow-1:
-            if result[j,i+1,0] > 0 and iou(oh, ow, [1-bx, by, bw, bh]) > iou(oh, ow, result[j,i+1,1:]):
-                result[j,i+1,:]=(bx, 1-bx, by, bw, bh)
-            else:
-                result[j,i+1,:]=(bx, 1-bx, by, bw, bh)
-        if by < 0.01 and j > 0:
-            if result[j-1,i,0] > 0 and iou(oh, ow, [bx, 1-by, bw, bh]) > iou(oh, ow, result[j-1,i,1:]):
-                result[j-1,i,:]=(1-by, bx, 1-by, bw, bh)
-            else:
-                result[j-1,i,:]=(1-by, bx, 1-by, bw, bh)
-        if by > 0.99 and j < oh-1:
-            if result[j+1,i,0] > 0 and iou(oh, ow, [bx, 1-by, bw, bh]) > iou(oh, ow, result[j+1,i,1:]):
-                result[j+1,i,:]=(by, bx, 1-by, bw, bh)
-            else:
-                result[j+1,i,:]=(by, bx, 1-by, bw, bh)
-    return result
-
-def decode(image_size, feature, threshold):
-    boxes = []
-    iw, ih = image_size
-    oh, ow, oc = feature.shape
-    sh, sw = float(ih)/oh, float(iw)/ow
-    for j in range(oh):
-        for i in range(ow):
-            p, bx, by, bw, bh = feature[j,i,:]
-            if (p >= threshold):
-                w = iw*bw
-                h = ih*bh
-                x = sw*(i + bx) - w/2
-                y = sh*(j + by) - h/2
-                boxes.append([x, y, w, h, p])
-    return boxes
-
-def object_loss(y_true, y_pred):
-    p1 = y_true[:,:,:,0]
-    p2 = y_pred[:,:,:,0]
-    epsilon = 1e-7
-    positive_num = tf.math.reduce_sum(tf.cast(p1 > 0.5, tf.int32))
-    positive_loss = -p1*K.log(p2+epsilon)
-    negative_loss = -(1-p1)*K.log(1-p2+epsilon)
-    negative_loss, _ = tf.math.top_k(tf.reshape(negative_loss, (-1,)), 3*positive_num)
-    object_loss = K.sum(positive_loss) + K.sum(negative_loss)
-    return K.sum(object_loss)
-
-def detect_loss(y_true, y_pred):
-    p1, x1, y1, w1, h1 = [y_true[:,:,:,i] for i in range(5)]
-    p2, x2, y2, w2, h2 = [y_pred[:,:,:,i] for i in range(5)]
-    epsilon = 1e-7
-    positive_num = tf.math.reduce_sum(tf.cast(p1 > 0.5, tf.int32))
-    positive_loss = -p1*K.log(p2+epsilon)
-    negative_loss = -(1-p1)*K.log(1-p2+epsilon)
-    negative_loss, _ = tf.math.top_k(tf.reshape(negative_loss, (-1,)), 3*positive_num)
-    object_loss = K.sum(positive_loss) + K.sum(negative_loss)
-    location_loss = K.square(x1-x2) + K.square(y1-y2) + 10*K.square(w1-w2) + 10*K.square(h1-h2)
-    location_loss *= K.cast(p1 > 0.5, dtype='float32')
-    location_loss = 10*K.sum(location_loss)
-    return object_loss + location_loss
-
-# NOTES:
-# Precision = TP/(TP + FP)
-def precision(y_true, y_pred):
-    p1 = y_pred[:,:,:,0]
-    p2 = y_true[:,:,:,0]
-    P = K.cast(p1 > 0.5, dtype='float32')
-    TP = K.cast(p2 > 0.5, dtype='float32')*P
-    epsilon = 1e-7
-    return K.sum(TP)/(K.sum(P) + epsilon)
-
-# NOTES:
-# Recall = TP/(TP + FN)
-def recall(y_true, y_pred):
-    p1 = y_pred[:,:,:,0]
-    p2 = y_true[:,:,:,0]
-    TP = K.cast(p2 > 0.5, dtype='float32')*K.cast(p1 > 0.5, dtype='float32')
-    FN = K.cast(p2 > 0.5, dtype='float32')*K.cast(p1 <= 0.5, dtype='float32')
-    epsilon = 1e-7
-    return K.sum(TP)/(K.sum(TP) + K.sum(FN) + epsilon)
-
-def test_codec():
+def train_model(model, save_path=None):
+    crop_sizes = [(240, 180), (320,180), (180, 320), (180, 240)]
     image_size = (160, 160)
+    resize_rate = 0.8
+    sample_num = 6400
+    batch_size = 64
+    feture_shape = (3*(10*10+5*5+3*3+1), 6)
+    epochs = 10
     data = widerface.load_data()
-    train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    train_data = widerface.crop(train_data, 100, image_size)
-    for sample in train_data:
-        image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
-        boxes = np.array(sample["boxes"])
-        feature = encode(image.size, boxes, (3,3,5))
-        print(feature)
-        boxes=decode(image.size, feature, 0.9)
-        imgkit.draw_grids(image, (3,3))
-        imgkit.draw_boxes(image, boxes, color=(0,255,0))
-        plt.imshow(image)
-        plt.show()
-
-def test_generator():
-    image_size = (160, 160)
-    batch_size = 4
-    feature_shape = (3, 3, 5)
-    data = widerface.load_data()
-    train_data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
-    train_data = widerface.crop(train_data, 100, image_size)
-    for batch_x, batch_y in DataGenerator(train_data, image_size, feature_shape, batch_size):
-        for i in range(batch_size):
-            boxes = decode(image_size, batch_y[i], 0.5)
-            ax = plt.subplot(1, batch_size, i + 1)
-            plt.tight_layout()
-            ax.set_title("Sample %s" % i)
-            ax.axis('off')
-            ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
-            for box in boxes:
-                (x, y, w, h) = box[:4]
-                rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
-                ax.add_patch(rect)
-        plt.show()
-
-def build_model():
-    x = layers.Input(shape=(160, 160, 3))
-    conv_1 = layers.SeparableConv2D(32, 3, padding="same", activation="relu", input_shape=(160, 160, 3))(x)
-    maxpool_1= layers.MaxPool2D(2)(conv_1)
-    conv_2 = layers.SeparableConv2D(64, 3, padding="same", activation="relu")(maxpool_1)
-    maxpool_2= layers.MaxPool2D(2)(conv_2)
-    conv_3 = layers.SeparableConv2D(128, 3, padding="same", activation="relu")(maxpool_2)
-    maxpool_3= layers.MaxPool2D(2)(conv_3)
-    conv_4 = layers.SeparableConv2D(256, 3, padding="same", activation="relu")(maxpool_3)
-    maxpool_4= layers.MaxPool2D(2)(conv_4)
-    conv_5 = layers.SeparableConv2D(512, 3, padding="same", activation="relu")(maxpool_4)
-    maxpool_5= layers.MaxPool2D(2)(conv_5)
-    y = layers.SeparableConv2D(5, 3, activation="sigmoid")(maxpool_5)
-    model = models.Model(inputs=x, outputs=y)
-    model.compile(optimizer=optimizers.Adagrad(), loss=detect_loss, metrics=[object_loss, precision, recall])
-    model.summary()
-    return model
-
-def load_model(model_file):
-    model = models.load_model(model_file, custom_objects={
-        "detect_loss": detect_loss, 
-        "object_loss": object_loss, 
-        "precision": precision, 
-        "recall": recall})
-    model.summary()
-    return model
-
-def train_model(model, train_data, image_size, feature_shape, num_sample, batch_size, save_file):
-    train_data = widerface.select(train_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
-    train_data = widerface.crop(train_data, num_sample, image_size)
-    generator = DataGenerator(train_data, image_size, feature_shape, batch_size)
-    pos=save_file.rfind('_')
-    start = int(save_file[pos+1: len(save_file)-3])+1
+    data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
+    train_data = []
+    for crop_size in crop_sizes:
+        train_data += widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
+    random.shuffle(train_data)
+    generator = DataGenerator(train_data, image_size, feture_shape, batch_size)
     for i in range(1, 1111):
-        #model.fit_generator(generator, epochs=20, workers=2, use_multiprocessing=True, shuffle=True)
-        model.fit_generator(generator, epochs=20)
-        model.save(save_file[:pos+1] + str(start + i*20) + ".h5")
+        model.fit_generator(generator, epochs=epochs, workers=2, use_multiprocessing=True, shuffle=True)
+        if save_path != None:
+            p = save_path.rfind('_')
+            n = int(save_path[p+1: len(save_path)-3])
+            print("save model for epochs " + str(n + i*epochs))
+            model.save(save_path[:p+1] + str(n + i*epochs) + ".h5")
 
-def predict_model(model, val_data, image_size, feature_shape):
-    val_data = widerface.select(val_data, blur="0", illumination="0", occlusion="0", invalid="0", min_size=32)
-    val_data = widerface.crop(val_data, 9, (160,160))
-    generator = DataGenerator(val_data, image_size, feature_shape, 9)
+def predict_model(model):
+    crop_size = (240, 180)
+    image_size = (160, 160)
+    feture_shape = (3*(10*10+5*5+3*3+1), 6)
+    data = widerface.load_data()
+    data = widerface.select(data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
+    data = widerface.transform(data, 9, crop_size, image_size, 0.8)
+    generator = DataGenerator(data, image_size, feture_shape, 9)
     batch_x, batch_y = generator[0]
-    y_pred = model.predict(batch_x) 
+    y_pred = model.predict(batch_x)
     for i in range(len(y_pred)):
         ax = plt.subplot(3, 3, i + 1)
         plt.tight_layout()
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
-        boxes = decode(image_size, y_pred[i], 0.5)
+        w, h = image_size
+        # ground truth bounding boxes
+        boxes = decode(batch_y[i])
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
         for box in boxes:
-            (x, y, w, h, p) = box
-            print("Sample %d, predicted_box=(%d,%d,%d,%d), score=%f" % (i, x, y, w, h, p))
-            rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
-            ax.add_patch(rect)
-        boxes = decode(image_size, batch_y[i], 0.5)
-        for box in boxes:
-            (x, y, w, h, p) = box
-            print("Sample %d, true_box=(%d,%d,%d,%d), score=%f" % (i, x, y, w, h, p))
+            (x, y, w, h) = box[:4]
+            print("Sample %d, true_box=(%d,%d,%d,%d)" % (i, x, y, w, h))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='g', facecolor='none')
+            ax.add_patch(rect)
+        # predicted bounding boxes
+        boxes = decode(y_pred[i])
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
+        for box in boxes:
+            (x, y, w, h, c) = box
+            print("Sample %d, predicted_box=(%d,%d,%d,%d) confidence: %f" % (i, x, y, w, h, c))
+            rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
     plt.show()
 
-def detect(model):
-    c = cv2.VideoCapture(0)
-    r, img = c.read()
-    while r:
-        # img=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        small=cv2.resize(img, (160,160))
-        x = (small-127.5)/255
-        y_pred = model.predict(np.array([x]))
-        boxes = decode((160,160), y_pred[0], 0.9)
-        # boxes = [b for b in boxes if b[0] > 0 and b[1] > 0]
-        for box in boxes:
-            (x, y, w, h, p) = box
-            cv2.rectangle(small, (int(x),int(y)), (int(x+w),int(x+y)), (0,255,0), 2)
-        img=cv2.resize(small, (img.shape[1], img.shape[0]))
-        cv2.imshow("camera", img)
-        k = cv2.waitKey(20)
-        r, img = c.read()
-
-
-def test_model():
-    image_size=(160, 160)
-    feature_shape=(3,3,5)
-    num_sample=6400
-    batch_size=64
-
-    # build model
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v2_760.h5"
-    model=load_model(model_file)
-    # model=build_model()
-
-    # load widerface data
-    data = widerface.load_data()
-
-    # train model
-    train_model(model, data[0], image_size, feature_shape, num_sample, batch_size, model_file)
-
-    # predict model
-    predict_model(model, data[1], image_size, feature_shape)
-
-
 if __name__ == "__main__":
-    test_model()
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_2160.h5"
+    model = load_modle(model_path)
+    # model = build_modle()
+    train_model(model, model_path)
+    predict_model(model)
