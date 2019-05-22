@@ -3,3 +3,4 @@
 datasets/widerface/*
 datasets/mnist/*
 datasets/fddb/*
+datasets/w300/*
