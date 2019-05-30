@@ -12,7 +12,7 @@ from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
 from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/.." )
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 

@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 import cv2
 
-dataset_dir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + "300w"
+dataset_dir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + "w300"
 save_file = dataset_dir + os.path.sep + "300w.pkl"
 
 
@@ -81,12 +81,12 @@ def load_data(root=dataset_dir):
         dataset = pickle.load(f)
     return dataset
 
-# if __name__ == "__main__":
-#     data = load_data()
-#     for s in data[0]:
-#         img = cv2.imread(s["image"])
-#         for (x, y) in s["landmarks"]:
-#             cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
-#         cv2.imshow("image", img)
-#         if cv2.waitKey(3000) == ord('q'):
-#             break
+if __name__ == "__main__":
+    data = load_data()
+    for s in data[0]:
+        img = cv2.imread(s["image"])
+        for (x, y) in s["landmarks"]:
+            cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
+        cv2.imshow("image", img)
+        if cv2.waitKey(3000) == ord('q'):
+            break
