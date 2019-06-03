@@ -1,6 +1,7 @@
 import os
 import sys
 import cv2
+import dlib
 import numpy as np
 import tensorflow as tf
 from xml.etree import ElementTree as ET
@@ -116,6 +117,7 @@ def generate_boxes(dataset, detector):
     first_detected = 0
     second_detected = 0
     lossed = 0
+    hitted_dataset = []
     for data in dataset:
         img = cv2.imread(data["image"])
         boxes = detector.detect(img)
@@ -128,6 +130,7 @@ def generate_boxes(dataset, detector):
             if len(firsts) == 1 or len(seconds) == 1:
                 x, y, w, h = firsts[0][:4] if len(firsts) == 1 else seconds[0][:4]
                 data["box"] = [int(x), int(y), int(w), int(h)]
+                hitted_dataset.append(data)
                 detected = True   
                 first_detected += 1
         if not detected:
@@ -144,6 +147,7 @@ def generate_boxes(dataset, detector):
                     if len(firsts) == 1 or len(seconds) == 1:
                         x, y, w, h = firsts[0][:4] if len(firsts) == 1 else seconds[0][:4]
                         data["box"] = [int(x1+x), int(y1+y), int(w), int(h)]
+                        hitted_dataset.append(data)
                         detected = True
                         second_detected += 1
                         break
@@ -152,19 +156,11 @@ def generate_boxes(dataset, detector):
             x2, y2 = min(iw, x+w+w/10), min(ih, y+h+h/10)
             data["box"] = [int(x1), int(y1), int(x2-x1), int(y2-y1)]
             lossed += 1
-            # boxes = detector.detect(img)
-            # for b in boxes:
-            #     cv2.rectangle(img, (int(b[0]),int(b[1])),(int(b[0]+b[2]),int(b[1]+b[3])), (0, 255, 0), 2)
-            # cv2.rectangle(img, (int(x1),int(y1)),(int(x2),int(y2)), (0, 0, 255), 2)
-            # ih, iw = img.shape[:2]
-            # if ih > 1024 or iw > 1024:
-            #     img = cv2.resize(img, (1024, int(1024*ih/iw)), interpolation=cv2.INTER_AREA) 
-            # cv2.imshow("image", img)
-            # if cv2.waitKey(3000) == ord('q'):
-            #     break
         print("first detected %d，second detected：%d, lossed: %d" % (first_detected, second_detected, lossed) )
-    return dataset
+    return hitted_dataset
 
+
+# xml formats:
 # </dataset>
 #     </images>
 #         <image file='2009_004587.jpg'>
@@ -186,39 +182,57 @@ def generate_train_xml(data, xml_file):
         for b, parts in [ (d["box"], d["landmarks"]) for d in data if d["image"] == f]:
             box = ET.SubElement(image, "box", attrib={"left": str(b[0]), "top": str(b[1]), "width": str(b[2]), "height": str(b[3])})
             for i, (x, y) in enumerate(parts):
-                ET.SubElement(box, "part", attrib={"name": "%02d" % i, "x": str(x), "y": str(y)})
+                ET.SubElement(box, "part", attrib={"name": "%02d" % i, "x": str(int(x)), "y": str(int(y))})
     tree = ET.ElementTree(dataset)
     tree.write(xml_file, encoding="utf8", xml_declaration=True)
-    # tree = ET.parse(xml_file)
-    # dataset = tree.getroot()
-    # print(dataset.tag)
-    # for images in dataset:
-    #     print(images.tag)
-    #     for image in images:
-    #         print(image.tag)
-    #         for box in image:
-    #             print(box.attrib)
-    #         print(image.attrib)
+
+def train_landmarks(trainning_xml_file, landmarks_model_file):
+    options = dlib.shape_predictor_training_options()
+    options.oversampling_amount = 100
+    options.num_test_splits = 100
+    options.feature_pool_region_padding = 0.1
+    options.oversampling_translation_jitter = 0.1
+    options.landmark_relative_padding_mode = False
+    # options.nu = 0.05
+    # options.tree_depth = 2
+    options.be_verbose = True
+    dlib.train_shape_predictor(trainning_xml_file, landmarks_model_file, options)
+    print("\nTraining accuracy: {}".format(
+        dlib.test_shape_predictor(trainning_xml_file, landmarks_model_file)))
 
 if __name__ == "__main__":
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite" 
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite"
+    trainning_xml_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
+    landmarks_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/landmarks.model"
+
     detector = Detector(tflite_file)
     data = w300.load_data()
-    data = generate_boxes(data[0][:2], detector)
+    data = generate_boxes(data[0]+data[1], detector)
+    generate_train_xml(data, trainning_xml_file)
+    train_landmarks(trainning_xml_file, landmarks_model_file)
+    
+    predictor = dlib.shape_predictor(landmarks_model_file)
+    if predictor != None:
+        return
+       
+    cam = cv2.VideoCapture(0)
+    while True:
+        ok, img = cam.read()
+        if not ok:
+            break
+        boxes = detector.detect(img)
+        if len(boxes) >= 1:
+            x, y, w, h = boxes[0][:4]
+            cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 255, 0), 1)
 
-    xml_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_landmark_train.xml"
-    generate_train_xml(data[:2], xml_file)
+            shape = predictor(img, dlib.rectangle(int(x),int(y),int(x+w),int(y+h)))
+            landmarks = [[p.x, p.y] for p in shape.parts()]
+            for (x, y) in landmarks:
+                cv2.circle(img, (x, y), 1, (0, 0, 255), 2)
 
-
-    # for s in data:
-    #     img = cv2.imread(s["image"])
-    #     x, y, w, h = s["box"]
-    #     cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 255, 0), 1)
-    #     for (x, y) in s["landmarks"]:
-    #         cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
-    #     cv2.imshow("image", img)
-    #     if cv2.waitKey(1000) == ord('q'):
-    #         break
+        cv2.imshow("image", img)
+        if cv2.waitKey(30) == ord('q'):
+            break
                 
 
 
