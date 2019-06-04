@@ -120,6 +120,8 @@ def generate_boxes(dataset, detector):
     hitted_dataset = []
     for data in dataset:
         img = cv2.imread(data["image"])
+        if data["image"] == "d:\\share\\dldiy\\datasets\\w300\\300W\\01_Indoor\\indoor_133.png":
+            print("debug")
         boxes = detector.detect(img)
         detected = False
         if len(boxes) >= 1:
@@ -142,11 +144,14 @@ def generate_boxes(dataset, detector):
                 cx, cy = landmark_center(data["landmarks"])
                 boxes = detector.detect(img[int(y1):int(y2),int(x1):int(x2),:])
                 if len(boxes) >= 1:
+                    # NOTES:
+                    # boxes is relative to (x1, y1)
+                    boxes = [[x1+b[0],y1+b[1],b[2],b[3]] for b in boxes]
                     firsts = [ b for b in boxes if x < b[0]+b[2]/2 and b[0]+b[2]/2 < x+w and y < b[1]+b[3]/2 and b[1]+b[3]/2 < y+h]
                     seconds = [ b for b in boxes if b[0] < cx and cx < b[0]+b[2] and b[1] < cy and cy < b[1]+b[3]]
                     if len(firsts) == 1 or len(seconds) == 1:
                         x, y, w, h = firsts[0][:4] if len(firsts) == 1 else seconds[0][:4]
-                        data["box"] = [int(x1+x), int(y1+y), int(w), int(h)]
+                        data["box"] = [int(x), int(y), int(w), int(h)]
                         hitted_dataset.append(data)
                         detected = True
                         second_detected += 1
@@ -156,7 +161,7 @@ def generate_boxes(dataset, detector):
             x2, y2 = min(iw, x+w+w/10), min(ih, y+h+h/10)
             data["box"] = [int(x1), int(y1), int(x2-x1), int(y2-y1)]
             lossed += 1
-        print("first detected %d，second detected：%d, lossed: %d" % (first_detected, second_detected, lossed) )
+        print("first detected %d，second detected：%d, lossed: %d" % (first_detected, second_detected, lossed))
     return hitted_dataset
 
 
@@ -213,8 +218,8 @@ if __name__ == "__main__":
     
     predictor = dlib.shape_predictor(landmarks_model_file)
     if predictor != None:
-        return
-       
+        sys.exit(0)
+
     cam = cv2.VideoCapture(0)
     while True:
         ok, img = cam.read()
@@ -233,6 +238,9 @@ if __name__ == "__main__":
         cv2.imshow("image", img)
         if cv2.waitKey(30) == ord('q'):
             break
+
+
+
                 
 
 
