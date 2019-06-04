@@ -97,7 +97,6 @@ class Detector(object):
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         return boxes
 
-
 def landmark_box(landmarks):
     min_x, min_y, max_x, max_y = 111111, 111111, 0, 0
     for (x, y) in landmarks:
@@ -113,15 +112,13 @@ def landmark_center(landmarks):
     cy /= len(landmarks)
     return [cx, cy]
 
-def generate_boxes(dataset, detector):
+def generate_landmarks_data(dataset, detector):
     first_detected = 0
     second_detected = 0
     lossed = 0
     hitted_dataset = []
     for data in dataset:
         img = cv2.imread(data["image"])
-        if data["image"] == "d:\\share\\dldiy\\datasets\\w300\\300W\\01_Indoor\\indoor_133.png":
-            print("debug")
         boxes = detector.detect(img)
         detected = False
         if len(boxes) >= 1:
@@ -164,7 +161,6 @@ def generate_boxes(dataset, detector):
         print("first detected %d，second detected：%d, lossed: %d" % (first_detected, second_detected, lossed))
     return hitted_dataset
 
-
 # xml formats:
 # </dataset>
 #     </images>
@@ -178,7 +174,7 @@ def generate_boxes(dataset, detector):
 #         </image>
 #     </images>
 # </dataset>
-def generate_train_xml(data, xml_file):
+def generate_landmarks_trainning_file(data, landmarks_trainning_file):
     files = set([d["image"] for d in data])
     dataset = ET.Element("dataset")
     images = ET.SubElement(dataset, "images")
@@ -189,55 +185,60 @@ def generate_train_xml(data, xml_file):
             for i, (x, y) in enumerate(parts):
                 ET.SubElement(box, "part", attrib={"name": "%02d" % i, "x": str(int(x)), "y": str(int(y))})
     tree = ET.ElementTree(dataset)
-    tree.write(xml_file, encoding="utf8", xml_declaration=True)
+    tree.write(landmarks_trainning_file, encoding="utf8", xml_declaration=True)
 
-def train_landmarks(trainning_xml_file, landmarks_model_file):
+def train_landmarks(landmarks_trainning_file, landmarks_model_file):
     options = dlib.shape_predictor_training_options()
     options.oversampling_amount = 100
     options.num_test_splits = 100
+    options.feature_pool_size = 500
     options.feature_pool_region_padding = 0.1
     options.oversampling_translation_jitter = 0.1
-    options.landmark_relative_padding_mode = False
-    # options.nu = 0.05
-    # options.tree_depth = 2
+    options.landmark_relative_padding_mode = True
     options.be_verbose = True
-    dlib.train_shape_predictor(trainning_xml_file, landmarks_model_file, options)
-    print("\nTraining accuracy: {}".format(
-        dlib.test_shape_predictor(trainning_xml_file, landmarks_model_file)))
+    dlib.train_shape_predictor(landmarks_trainning_file, landmarks_model_file, options)
+    print("Training accuracy: {}".format(
+        dlib.test_shape_predictor(landmarks_trainning_file, landmarks_model_file)))
 
-if __name__ == "__main__":
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite"
-    trainning_xml_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
-    landmarks_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/landmarks.model"
-
-    detector = Detector(tflite_file)
-    data = w300.load_data()
-    data = generate_boxes(data[0]+data[1], detector)
-    generate_train_xml(data, trainning_xml_file)
-    train_landmarks(trainning_xml_file, landmarks_model_file)
-    
+def test_landmarks_predictor(detecor_model_file, landmarks_model_file):
+    detector = Detector(detecor_model_file)
     predictor = dlib.shape_predictor(landmarks_model_file)
-    if predictor != None:
-        sys.exit(0)
-
-    cam = cv2.VideoCapture(0)
+    camera = cv2.VideoCapture(0)
     while True:
-        ok, img = cam.read()
+        ok, img = camera.read()
         if not ok:
             break
         boxes = detector.detect(img)
         if len(boxes) >= 1:
             x, y, w, h = boxes[0][:4]
             cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 255, 0), 1)
-
             shape = predictor(img, dlib.rectangle(int(x),int(y),int(x+w),int(y+h)))
-            landmarks = [[p.x, p.y] for p in shape.parts()]
-            for (x, y) in landmarks:
-                cv2.circle(img, (x, y), 1, (0, 0, 255), 2)
-
+            for p in shape.parts():
+                cv2.circle(img, (p.x, p.y), 1, (0, 0, 255), 2)
         cv2.imshow("image", img)
         if cv2.waitKey(30) == ord('q'):
             break
+
+
+if __name__ == "__main__":
+    detector_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite"
+    landmarks_trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
+    landmarks_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/landmarks.model"
+
+    # generate landmarks trainning file
+    detector = Detector(detector_model_file)
+    data = w300.load_data()
+    data = generate_landmarks_data(data[0]+data[1], detector)
+    generate_landmarks_trainning_file(data, landmarks_trainning_file)
+
+    # train landmarks model
+    train_landmarks(landmarks_trainning_file, landmarks_model_file)
+
+    # test landmarks prediction
+    # test_landmarks_predictor(detector_model_file, landmarks_model_file)
+
+
+
 
 
 
