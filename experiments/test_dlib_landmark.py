@@ -144,7 +144,7 @@ def test_detection(tflite_file):
         image = img.copy()  
         boxes = detector.detect(img)
         if len(boxes) > 0:
-            #(x, y, w, h, p) = boxes[0]
+            # (x, y, w, h, p) = boxes[0]
             # print("detected box: %s, confidence: %f " % (str(box), p))
             x, y, w, h = make_square_box(boxes[0])
             # fit face landmarks
@@ -162,8 +162,6 @@ def test_detection(tflite_file):
             cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 0, 255), 1)
             for (x, y) in landmarks:
                 cv2.circle(img, (x, y), 1, (0, 0, 255), 2)
-
-
 
         cv2.imshow("Image", img)
         if cv2.waitKey(20) == ord('q'):

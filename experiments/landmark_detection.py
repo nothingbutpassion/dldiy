@@ -186,6 +186,7 @@ def generate_landmarks_trainning_file(data, landmarks_trainning_file):
                 ET.SubElement(box, "part", attrib={"name": "%02d" % i, "x": str(int(x)), "y": str(int(y))})
     tree = ET.ElementTree(dataset)
     tree.write(landmarks_trainning_file, encoding="utf8", xml_declaration=True)
+    print("%s generated", landmarks_trainning_file)
 
 def train_landmarks(landmarks_trainning_file, landmarks_model_file):
     options = dlib.shape_predictor_training_options()
@@ -226,16 +227,16 @@ if __name__ == "__main__":
     landmarks_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/landmarks.model"
 
     # generate landmarks trainning file
-    detector = Detector(detector_model_file)
-    data = w300.load_data()
-    data = generate_landmarks_data(data[0]+data[1], detector)
-    generate_landmarks_trainning_file(data, landmarks_trainning_file)
+    # detector = Detector(detector_model_file)
+    # data = w300.load_data()
+    # data = generate_landmarks_data(data[0]+data[1], detector)
+    # generate_landmarks_trainning_file(data, landmarks_trainning_file)
 
     # train landmarks model
-    train_landmarks(landmarks_trainning_file, landmarks_model_file)
+    # train_landmarks(landmarks_trainning_file, landmarks_model_file)
 
     # test landmarks prediction
-    # test_landmarks_predictor(detector_model_file, landmarks_model_file)
+    test_landmarks_predictor(detector_model_file, landmarks_model_file)
 
 
 
