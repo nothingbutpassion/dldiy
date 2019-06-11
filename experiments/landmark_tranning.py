@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 
 class sample(object):
-    def __init__(self, img, box, target_shape):
+    def __init__(self, img, box, target_shape=None):
         self.img = img
         self.box = box
         self.target_shape = target_shape
@@ -22,13 +22,13 @@ class split_feature(object):
 
 class regression_tree(object):
     def __init__(self, depth, leaf_shape):
-        self.depth = depth
         self.nodes = [split_feature() for i in range(np.power(2, depth)-1)]
         self.leaf_values = np.zeros((np.power(2, depth),) + leaf_shape)
-    def left_child(self, idx):
-        return 2*idx + 1
-    def right_child(self, idx):
-        return 2*idx + 2
+        self.left_child = lambda idx: 2*idx + 1
+        self.right_child = lambda idx: 2*idx + 2
+        self.num_nodes = len(self.nodes)
+        self.num_leaves = self.num_nodes + 1
+
     def leaf_value(self, pixel_intensities):
         i = 0
         while i < len(self.nodes):
@@ -53,10 +53,15 @@ class regression_tree(object):
 # </dataset>
 def parse_file(trainning_file):
     result = []
+    dir = os.path.dirname(trainning_file)
     tree = ET.parse(trainning_file)
-    images = tree.getroot()[0]
+    dataset = tree.getroot()
+    images = [ e for e in dataset if e.tag == "images"][0]
     for image in images:
         file = image.attrib["file"]
+        if not os.path.exists(file):
+            file = os.path.join(dir, file)
+        assert(os.path.exists(file))
         for box in image:
             result.append({
                 "file": file,
@@ -98,11 +103,11 @@ def generate_samples(metadata, oversampling_amount=1):
         for i in range(oversampling_amount):
             r = sample(s.img, s.box, s.target_shape)
             if i % oversampling_amount == 0:
-                r.current_shape = mean_shape
+                r.current_shape = np.copy(mean_shape)
             else:
                 index = int(np.random.rand()*len(samples))
                 index = (index + 1)%len(samples) if s is samples[index] else index
-                r.current_shape = samples[index].target_shape
+                r.current_shape = np.copy(samples[index].target_shape)
             r.diff_shape = r.target_shape - r.current_shape
             result.append(r)
     return result, mean_shape
@@ -137,32 +142,87 @@ def extract_pixel_intensities(samples, mean_shape, anchor_indices, deltas):
         X = get_transform(mean_shape, s.current_shape)
         shape = transform(mean_shape, X)
         s.pixel_intensities = np.zeros((len(anchor_indices),))
-        for idx in anchor_indices:
+        for i, idx in enumerate(anchor_indices):
             x, y = img_coord(s.box, shape[idx] + np.dot(deltas[idx], X[:2,:]))
-            x = min(max(0, int(x)), s.img.shape[1]-1)
-            y = min(max(0, int(y)), s.img.shape[0]-1)
-            s.pixel_intensities[idx] = np.average(s.img[y,x])
+            if x > 0 and x < s.img.shape[1] and y > 0 and y < s.img.shape[0]:
+                s.pixel_intensities[i] = np.average(s.img[int(y),int(x)])
 
-
-def randomly_generate_splits(pixel_coords, num_test_coords, lamda_coefficient):
+def randomly_generate_split(pixel_coords, num_test_coords, lamda):
     split = split_feature()
-    for i in range(num_test_coords*num_test_coords):
-        idx1 = min(int(np.random.rand()*num_test_coords), num_test_coords-1)
-        idx2 = min(int(np.random.rand()*num_test_coords), num_test_coords-1)
-        while idx2 == idx1:
-            idx2 = min(int(np.random.rand()*num_test_coords), num_test_coords-1) 
-        dx, dy = pixel_coords[idx1] - pixel_coords[idx1]
+    while True:
+        split.idx1 = min(int(np.random.rand()*num_test_coords), num_test_coords-1)
+        split.idx2 = min(int(np.random.rand()*num_test_coords), num_test_coords-1)
+        while split.idx2 == split.idx1:
+            split.idx2 = min(int(np.random.rand()*num_test_coords), num_test_coords-1) 
+        dx, dy = pixel_coords[split.idx1] - pixel_coords[split.idx2]
         dist = np.sqrt(dx*dx + dy*dy)
-        accept_prob = np.exp(-dist*lamda_coefficient)
+        accept_prob = np.exp(-dist/lamda)
         if accept_prob > np.random.rand():
-            split.idx1 = idx1
-            split.idx2 = idx2
             break
-        split.thresh = (np.random.rand()*256 - 128)/2.0
+    split.thresh = (np.random.rand()*256 - 128)/2.0
     return split
 
-def make_regression_tree(samples, pixel_corrds, tree_depth):
-    pass
+def generate_split(pixel_coords, num_test_coords, num_test_splits, lamda, samples, start, end, sum):
+    best_split = None
+    best_score = 0
+    best_left_sum = None
+    best_right_sum = None
+    for i in range(num_test_splits):
+        split = randomly_generate_split(pixel_coords, num_test_coords, lamda)
+        left_sum = np.zeros_like(sum)
+        left_count = 0
+        for j in range(start, end):
+            if samples[j].pixel_intensities[split.idx1] - samples[j].pixel_intensities[split.idx2] > split.thresh:
+                left_sum += samples[j].diff_shape
+                left_count += 1
+        right_sum = sum - left_sum
+        right_count = end - start - left_count
+        score = 0
+        if left_count > 0 and right_count > 0:
+            score = np.sum(left_sum**2)/left_count + np.sum(right_sum**2)/right_count
+        elif left_count > 0:
+            score = np.sum(left_sum**2)/left_count
+        elif right_count > 0:
+            score = np.sum(right_sum**2)/right_count
+        if best_split == None or best_score < score:
+            best_split = split
+            best_score = score
+            best_left_sum = left_sum
+            best_right_sum = right_sum
+    return best_split, best_left_sum, best_right_sum
+
+def partition_samples(split, samples, start, end):
+    mid = start
+    for j in range(start, end):
+        if samples[j].pixel_intensities[split.idx1] - samples[j].pixel_intensities[split.idx2] > split.thresh:
+            samples[mid], samples[j] = samples[j], samples[mid]
+            mid += 1
+    return mid
+
+def make_regression_tree(samples, pixel_coords, tree_depth, num_test_coords, num_test_splits, lamda, nu):
+    tree = regression_tree(tree_depth, samples[0].diff_shape.shape)
+    sum = np.zeros(samples[0].diff_shape.shape)
+    for s in samples:
+        s.diff_shape = s.target_shape - s.current_shape
+        sum += s.diff_shape
+    # make tree nodes
+    queue = [(0, len(samples), sum)]
+    for i in range(tree.num_nodes):
+        start, end, sum = queue[0]
+        del queue[0]
+        split, left_sum, right_sum = generate_split(pixel_coords, num_test_coords, num_test_splits, lamda, samples, start, end, sum)
+        tree.nodes[i] = split
+        mid = partition_samples(split, samples, start, end)
+        queue.append((start, mid, left_sum))
+        queue.append((mid, end, right_sum))
+    # make tree leaves
+    for i, (start, end, sum) in enumerate(queue):
+        if start != end:
+            tree.leaf_values[i] = nu*sum/(end - start)
+        # update current shape
+        for j in range(start, end):
+            samples[j].current_shape += tree.leaf_values[i] 
+    return tree
 
 def test_transform(mean_shape, current_shape):
     X = get_transform(mean_shape, current_shape)
@@ -231,37 +291,103 @@ def test_randomly_sample_pixel_coords(mean_shape):
     cv2.imshow("image", img)
     cv2.waitKey()
 
-
-
-
-if __name__ == "__main__":
-    trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
-    #test_parse_file(trainning_file)
-    metadata = parse_file(trainning_file)
-    
-    # params
+def train(trainning_file):
+    # tranning params
     oversampling_amount = 10
     cascade_depth = 10
     num_test_coords = 400
     num_trees_per_cascade = 500
     tree_depth = 4
     num_test_splits = 20
+    lamda = 0.1
+    nu = 0.1
+
+    # parese trainning file
+    metadata = parse_file(trainning_file)
+
+    # generate samples
+    samples, mean_shape = generate_samples(metadata, oversampling_amount)
+    
+    # generate pixel coords
+    pixel_coords, anchor_indices, deltas = randomly_sample_pixel_coords(mean_shape, cascade_depth, num_test_coords)
+    
+    # generate regression forests
+    forests = []
+    for cascade in range(cascade_depth):
+        extract_pixel_intensities(samples, mean_shape, anchor_indices[cascade], deltas[cascade])
+        forest = []
+        for i in range(len(num_trees_per_cascade)):
+            tree = make_regression_tree(samples, pixel_coords[cascade], tree_depth, num_test_coords, num_test_splits, lamda, nu)
+            forest.append(tree)
+        forests.append(forest)
+    
+    return forests, mean_shape, pixel_coords, anchor_indices, deltas
+
+def predict(forests, mean_shape, anchor_indices, deltas, img, box):
+    s = sample(img, box)
+    s.current_shape = np.copy(mean_shape)
+    for cascade, forest in enumerate(forests):
+        extract_pixel_intensities([s], mean_shape, anchor_indices[cascade], deltas[cascade])
+        for tree in forest:
+            s.current_shape += tree.leaf_value(s.pixel_intensities)
+    return img_coord(box, s.current_shape)
+
+def train_error(samples):
+    diff_shape = np.float32([s.target_shape - s.current_shape for s in samples])
+    error = np.sqrt(diff_shape**2)
+    error = np.average(error)
+    print("train error: " + str(error))
+
+
+if __name__ == "__main__":
+    trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
+    # trainning_file = "D:/share/dlib-19.17/examples/faces/training_with_face_landmarks.xml"
+    metadata = parse_file(trainning_file)
+    
+    # tranning params
+    oversampling_amount = 10
+    cascade_depth = 10
+    num_test_coords = 400
+    num_trees_per_cascade = 500
+    tree_depth = 4
+    num_test_splits = 20
+    lamda = 0.1
+    nu = 0.1
 
     #test_generate_samples(metadata)
     samples, mean_shape = generate_samples(metadata, oversampling_amount)
 
-    #test_transform(mean_shape, samples[11].target_shape)
     #test_randomly_sample_pixel_coords(mean_shape)
-
     pixel_coords, anchor_indices, deltas = randomly_sample_pixel_coords(mean_shape, cascade_depth, num_test_coords)
-
-    for cascade in range(len(cascade_depth)):
+    forests = []
+    for cascade in range(cascade_depth):
+        print("trainning forest %d ... " % cascade)
         extract_pixel_intensities(samples, mean_shape, anchor_indices[cascade], deltas[cascade])
-        for i in range(len(num_trees_per_cascade)):
-            make_regression_tree(samples, pixel_coords[cascade], tree_depth) 
+        forest = []
+        for i in range(num_trees_per_cascade):
+            print("make regression tree %d ..." % i) 
+            tree = make_regression_tree(samples, pixel_coords[cascade], tree_depth, num_test_coords, num_test_splits, lamda, nu)
+            forest.append(tree)
+            train_error(samples)
+            print("make regression tree %d finished" % i)
+        print("trainning forest %d finished" % cascade)    
+        forests.append(forest)
+
+    for d in metadata:
+        img = cv2.imread(d["file"])
+        h, w = img.shape[:2]
+        if w < 1024 or h < 1024:
+            box = d["box"]
+            for (x, y)  in d["landmarks"]:
+                cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
+            landmarks = predict(forests, mean_shape, anchor_indices, deltas, img, box)
+            for (x, y) in landmarks:
+                cv2.circle(img, (int(x), int(y)), 1, (0, 0, 255), 2)
+            cv2.imshow("image", img)
+            if cv2.waitKey(3000) == ord('q'):
+                break
 
 
-    
     
 
 

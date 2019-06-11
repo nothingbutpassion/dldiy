@@ -201,6 +201,21 @@ def train_landmarks(landmarks_trainning_file, landmarks_model_file):
     print("Training accuracy: {}".format(
         dlib.test_shape_predictor(landmarks_trainning_file, landmarks_model_file)))
 
+def test_train_landmarks(landmarks_trainning_file, landmarks_model_file):
+    options = dlib.shape_predictor_training_options()
+    options.oversampling_amount = 100
+    options.tree_depth = 2
+    options.nu = 0.05
+    # options.num_test_splits = 100
+    # options.feature_pool_size = 500
+    # options.feature_pool_region_padding = 0.1
+    # options.oversampling_translation_jitter = 0.1
+    options.landmark_relative_padding_mode = True
+    options.be_verbose = True
+    dlib.train_shape_predictor(landmarks_trainning_file, landmarks_model_file, options)
+    print("Training accuracy: {}".format(
+        dlib.test_shape_predictor(landmarks_trainning_file, landmarks_model_file)))
+
 def test_landmarks_predictor(detecor_model_file, landmarks_model_file):
     detector = Detector(detecor_model_file)
     predictor = dlib.shape_predictor(landmarks_model_file)
@@ -234,6 +249,9 @@ if __name__ == "__main__":
 
     # train landmarks model
     # train_landmarks(landmarks_trainning_file, landmarks_model_file)
+    landmarks_trainning_file = "D:/share/dlib-19.17/examples/faces/training_with_face_landmarks.xml"
+    landmarks_model_file = "D:/share/dlib-19.17/examples/faces/landmark.data"
+    test_train_landmarks(landmarks_trainning_file, landmarks_model_file)
 
     # test landmarks prediction
     test_landmarks_predictor(detector_model_file, landmarks_model_file)
