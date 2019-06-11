@@ -33,7 +33,6 @@ def keras_to_tflite(keras_file, tflite_file, custom_objects):
     tflite_model = converter.convert()
     open(tflite_file, "wb").write(tflite_model)
 
-
 def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
@@ -171,8 +170,6 @@ def test_detection(tflite_file):
 def usage():
     print("""Usage: <this-app> -m <model-version> -i <keras-h5-file> -o <tflite-file> 
                  Or <this-app> -m <model-version> -input <keras-h5-file> --output <tflite-file>
-                 Or <this-app> -h
-                 Or <this-app> --help 
     """)
 
 def parse_arguments():
@@ -182,8 +179,8 @@ def parse_arguments():
         print(err)
         sys.exit(-1)
     model_version = "v1"    
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite" 
+    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.h5"
+    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.tflite" 
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()

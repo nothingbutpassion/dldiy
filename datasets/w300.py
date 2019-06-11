@@ -7,7 +7,6 @@ import cv2
 dataset_dir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + "w300"
 save_file = dataset_dir + os.path.sep + "300w.pkl"
 
-
 # File content format
 # version: 1
 # n_points: 68
@@ -16,8 +15,6 @@ save_file = dataset_dir + os.path.sep + "300w.pkl"
 # ...
 # 530.151 452.817
 # }
-
-
 def _parse_data(dir, file_prefix):
     data = []
     for i in range(1, 301):
