@@ -6,23 +6,10 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-g_scales = [0.3, 0.5, 0.7, 0.9]
-g_sizes = [[10,10], [5,5], [3,3], [1,1]]
-# NOTES: 
-# v1 model: g_aspects = [0.5, 0.8, 1.0]
-# v2 model: g_aspects = [0.5, 1.0, 1.5]
-g_aspects = [0.5, 0.8, 1.0]
-
-def recall(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def precision(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def localization_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def confidence_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def detection_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
+# model params
+_scales  = [0.3, 0.5, 0.7, 0.9]
+_sizes   = [[10,10], [5,5], [3,3], [1,1]]
+_aspects = [0.5, 0.8, 1.0]
 
 # NOTES:
 # This function is tested on TF 1.14
@@ -33,7 +20,7 @@ def keras_to_tflite(keras_file, tflite_file, custom_objects):
     tflite_model = converter.convert()
     open(tflite_file, "wb").write(tflite_model)
 
-def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+def get_dbox(feature_index, scales=_scales, sizes=_sizes, aspects=_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -51,7 +38,7 @@ def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-def decode(features, threshold=0.3, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+def decode(features, threshold=0.3, scales=_scales, sizes=_sizes, aspects=_aspects):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
@@ -95,17 +82,15 @@ def make_square_box(box):
     x, y, w, h = box[:4]
     s = np.sqrt(w*h)
     x += (w - s)/2
-    y += 0.8*(h - s)
+    y += (h - s)/1.3
     w = s
     h = s
     return (x, y, w, h)
 
 class Detector(object):
     def __init__(self, tflite_file):
-        # Load TFLite model and allocate tensors.
         interpreter = tf.lite.Interpreter(model_path=tflite_file)
         interpreter.allocate_tensors()
-        # Get input and output tensors.
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
         self.interpreter = interpreter
@@ -130,17 +115,17 @@ class Detector(object):
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         return boxes
 
-
 def test_detection(tflite_file):
     detector = Detector(tflite_file)
     dlib_detector = dlib.get_frontal_face_detector()
-    dlib_predictor = dlib.shape_predictor("D:/share/dlib-stuff/shape_predictor_68_face_landmarks.dat")
+    dlib_predictor = dlib.shape_predictor(os.path.dirname(os.path.abspath(__file__)) + "/models/shape_predictor_68_face_landmarks.dat")
     c = cv2.VideoCapture(0)
     while True:
         ok, img = c.read()
         if not ok:
             break  
         image = img.copy()  
+        # try ours detector
         boxes = detector.detect(img)
         if len(boxes) > 0:
             # (x, y, w, h, p) = boxes[0]
@@ -152,7 +137,7 @@ def test_detection(tflite_file):
             cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 255, 0), 1)
             for (x, y) in landmarks:
                 cv2.circle(img, (x, y), 1, (0, 255, 0), 2)
-
+        # try dlib detector
         rects = dlib_detector(image, 0)
         if len(rects) > 0:
             x, y, w, h = rects[0].left(), rects[0].top(), rects[0].width(), rects[0].height()
@@ -161,50 +146,36 @@ def test_detection(tflite_file):
             cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0, 0, 255), 1)
             for (x, y) in landmarks:
                 cv2.circle(img, (x, y), 1, (0, 0, 255), 2)
-
         cv2.imshow("Image", img)
-        if cv2.waitKey(20) == ord('q'):
+        if cv2.waitKey(30) == ord('q'):
             break
 
-
 def usage():
-    print("""Usage: <this-app> -m <model-version> -i <keras-h5-file> -o <tflite-file> 
-                 Or <this-app> -m <model-version> -input <keras-h5-file> --output <tflite-file>
-    """)
+    print("Usage: %s -i <tflite-file>  [-m <model-version>]" % sys.argv[0])
+    sys.exit(-1)
 
 def parse_arguments():
     try:
-	    opts, args = getopt.getopt(sys.argv[1:], "hi:o:m:", ["help", "input=" "output="])
+	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input=" "output="])
     except getopt.GetoptError as err:
         print(err)
-        sys.exit(-1)
-    model_version = "v1"    
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.h5"
+        usage()
+    model_version = "v1"
     tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.tflite" 
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()
-            sys.exit(0)
         elif o == "-m":
             model_version = a
         elif o in ("-i", "--input"):
-            keras_file = a
-        elif o in ("-o", "--output"):
             tflite_file = a
-    return keras_file, tflite_file, model_version
+    return tflite_file, model_version
 
 if __name__ == "__main__":
-    keras_file, tflite_file, model_version = parse_arguments()
-    if model_version == "v1":
-        g_aspects = [0.5, 0.8, 1.0]
-    elif model_version == "v2":
-        g_aspects = [0.5, 1.0, 1.5]
-    custom_objects = {
-        "detection_loss": detection_loss, 
-        "confidence_loss": confidence_loss, 
-        "localization_loss": localization_loss,
-        "precision": precision,
-        "recall": recall
-    }
-    keras_to_tflite(keras_file, tflite_file, custom_objects)
+    tflite_file, model_version = parse_arguments()
+    # NOTES: 
+    # For v1 model, _aspects = [0.5, 0.8, 1.0]
+    # For v2 model, _aspects = [0.5, 1.0, 1.5]
+    if model_version != "v1":
+        _aspects = [0.5, 1.0, 1.5]
     test_detection(tflite_file)

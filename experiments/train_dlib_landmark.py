@@ -72,10 +72,8 @@ def nms(boxes, threshold=0.01):
 
 class Detector(object):
     def __init__(self, tflite_file):
-        # Load TFLite model and allocate tensors.
         interpreter = tf.lite.Interpreter(model_path=tflite_file)
         interpreter.allocate_tensors()
-        # Get input and output tensors.
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
         self.interpreter = interpreter
@@ -190,26 +188,11 @@ def generate_landmarks_trainning_file(data, landmarks_trainning_file):
 
 def train_landmarks(landmarks_trainning_file, landmarks_model_file):
     options = dlib.shape_predictor_training_options()
-    options.oversampling_amount = 100
+    options.oversampling_amount = 20
     options.num_test_splits = 100
     options.feature_pool_size = 500
-    options.feature_pool_region_padding = 0.1
+    options.feature_pool_region_padding = 0.05
     options.oversampling_translation_jitter = 0.1
-    options.landmark_relative_padding_mode = True
-    options.be_verbose = True
-    dlib.train_shape_predictor(landmarks_trainning_file, landmarks_model_file, options)
-    print("Training accuracy: {}".format(
-        dlib.test_shape_predictor(landmarks_trainning_file, landmarks_model_file)))
-
-def test_train_landmarks(landmarks_trainning_file, landmarks_model_file):
-    options = dlib.shape_predictor_training_options()
-    options.oversampling_amount = 100
-    options.tree_depth = 2
-    options.nu = 0.05
-    # options.num_test_splits = 100
-    # options.feature_pool_size = 500
-    # options.feature_pool_region_padding = 0.1
-    # options.oversampling_translation_jitter = 0.1
     options.landmark_relative_padding_mode = True
     options.be_verbose = True
     dlib.train_shape_predictor(landmarks_trainning_file, landmarks_model_file, options)
@@ -235,26 +218,24 @@ def test_landmarks_predictor(detecor_model_file, landmarks_model_file):
         if cv2.waitKey(30) == ord('q'):
             break
 
-
 if __name__ == "__main__":
-    detector_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite"
-    landmarks_trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
-    landmarks_model_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/landmarks.model"
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    detector_model_file = os.path.join(this_dir, "models", "face_model_v1_2100.tflite") 
+    landmarks_trainning_file = os.path.join(this_dir, "models", "face_model_v1_2100_w300_tranning_landmarks.xml")
+    landmarks_model_file = os.path.join(this_dir, "models", "face_model_v1_2100_w300_landmarks.dat")
 
     # generate landmarks trainning file
-    # detector = Detector(detector_model_file)
-    # data = w300.load_data()
-    # data = generate_landmarks_data(data[0]+data[1], detector)
-    # generate_landmarks_trainning_file(data, landmarks_trainning_file)
+    detector = Detector(detector_model_file)
+    data = w300.load_data()
+    data = generate_landmarks_data(data[0]+data[1], detector)
+    generate_landmarks_trainning_file(data, landmarks_trainning_file)
 
     # train landmarks model
-    # train_landmarks(landmarks_trainning_file, landmarks_model_file)
-    landmarks_trainning_file = "D:/share/dlib-19.17/examples/faces/training_with_face_landmarks.xml"
-    landmarks_model_file = "D:/share/dlib-19.17/examples/faces/landmark.data"
-    test_train_landmarks(landmarks_trainning_file, landmarks_model_file)
+    train_landmarks(landmarks_trainning_file, landmarks_model_file)
 
-    # test landmarks prediction
-    test_landmarks_predictor(detector_model_file, landmarks_model_file)
+    # test landmarks model
+    if os.name == "nt":
+        test_landmarks_predictor(detector_model_file, landmarks_model_file)
 
 
 

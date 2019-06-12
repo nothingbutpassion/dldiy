@@ -284,7 +284,7 @@ def train_model(model, save_path=None):
             print("save model for epochs " + str(n + i*epochs))
             model.save(save_path[:p+1] + str(n + i*epochs) + ".h5")
 
-def predict_model(model):
+def test_model(model):
     crop_size = (240, 180)
     image_size = (160, 160)
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
@@ -324,4 +324,4 @@ if __name__ == "__main__":
     model = load_modle(model_path)
     # model = build_modle()
     train_model(model, model_path)
-    predict_model(model)
+    test_model(model)

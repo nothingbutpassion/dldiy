@@ -1,9 +1,31 @@
 import os
 import sys
 import cv2
+import pickle
+import time
 import numpy as np
 import xml.etree.ElementTree as ET
 
+
+class progress_bar(object):
+    def __init__(self, target):
+        self.target = target
+        self.start_time = time.time()
+        self.last_time = self.start_time
+    def _str(self, seconds):
+        if seconds < 60:
+            return "%.0f seconds" % seconds
+        elif seconds < 60*60:
+            return "%.2f minutes" % (seconds/60,)
+        else:
+            return "%.2f hours" % (seconds/(60*60),)
+    def show_progress(self, current, user_str=""):
+        current_time = time.time()
+        if current > 0 and current_time - self.last_time > 0.1:
+            elapsed = current_time - self.start_time
+            remaining = elapsed*(self.target - current)/current
+            print("Time elapsed: %s, remaining: %s%s" % (self._str(elapsed), self._str(remaining), user_str))
+        self.last_time = current_time
 
 class sample(object):
     def __init__(self, img, box, target_shape=None):
@@ -224,6 +246,70 @@ def make_regression_tree(samples, pixel_coords, tree_depth, num_test_coords, num
             samples[j].current_shape += tree.leaf_values[i] 
     return tree
 
+def train_error(samples):
+    diff_shape = np.float32([s.target_shape - s.current_shape for s in samples])
+    total_err = np.sqrt(diff_shape**2)
+    average_err = np.average(total_err)
+    return average_err
+
+def train_model(trainning_file, model_file):
+    # trainning params
+    oversampling_amount = 10
+    cascade_depth = 10
+    num_test_coords = 400
+    num_trees_per_cascade = 500
+    tree_depth = 4
+    num_test_splits = 20
+    lamda = 0.1
+    nu = 0.1
+
+    # parse trainning file
+    print("parse %s ..." % trainning_file)
+    metadata = parse_file(trainning_file)
+
+    # generate trainning samples
+    print("generate trainning samples ...")
+    bar = progress_bar(cascade_depth*num_trees_per_cascade)
+    samples, mean_shape = generate_samples(metadata, oversampling_amount)
+    
+    # generate pixel coords
+    print("randomly sample pixel coords ...")
+    pixel_coords, anchor_indices, deltas = randomly_sample_pixel_coords(mean_shape, cascade_depth, num_test_coords)
+    
+    # generate regression forests
+    print("make regression forests ...")
+    forests = []
+    for cascade in range(cascade_depth):
+        extract_pixel_intensities(samples, mean_shape, anchor_indices[cascade], deltas[cascade])
+        forest = []
+        for i in range(num_trees_per_cascade):
+            tree = make_regression_tree(samples, pixel_coords[cascade], tree_depth, num_test_coords, num_test_splits, lamda, nu)
+            forest.append(tree)
+            bar.show_progress(cascade*num_trees_per_cascade + i + 1, ", tranning error: %.6f" % train_error(samples))
+        forests.append(forest)
+
+    # save model
+    print("save model to %s ... " % model_file)
+    model_data = (forests, mean_shape, anchor_indices, deltas)
+    with open(model_file, "wb") as f:
+        pickle.dump(model_data, f, -1)
+    print("model saved")
+
+def load_model(model_file):
+    with open(model_file, "rb") as f:
+        model_data = pickle.load(f)
+    return model_data
+
+def predict(model_data, img, box):
+    forests, mean_shape, anchor_indices, deltas = model_data
+    s = sample(img, box)
+    s.current_shape = np.copy(mean_shape)
+    for cascade, forest in enumerate(forests):
+        extract_pixel_intensities([s], mean_shape, anchor_indices[cascade], deltas[cascade])
+        for tree in forest:
+            s.current_shape += tree.leaf_value(s.pixel_intensities)
+    return img_coord(box, s.current_shape)
+
 def test_transform(mean_shape, current_shape):
     X = get_transform(mean_shape, current_shape)
     shape = transform(mean_shape, X)
@@ -257,8 +343,7 @@ def test_parse_file(trainning_file):
         for (x, y) in d["landmarks"]:
             cv2.circle(img, (int(scale*x), int(scale*y)), 1, (0, 255, 0), 2)
         cv2.imshow("sample", img)
-        key = cv2.waitKey(3000)
-        if key == ord('q'):
+        if cv2.waitKey(3000) == ord('q'):
             break
 
 def test_generate_samples(metadata):
@@ -291,88 +376,9 @@ def test_randomly_sample_pixel_coords(mean_shape):
     cv2.imshow("image", img)
     cv2.waitKey()
 
-def train(trainning_file):
-    # tranning params
-    oversampling_amount = 10
-    cascade_depth = 10
-    num_test_coords = 400
-    num_trees_per_cascade = 500
-    tree_depth = 4
-    num_test_splits = 20
-    lamda = 0.1
-    nu = 0.1
-
-    # parese trainning file
+def test_landmarks_model(trainning_file, model_file):
+    model_data = load_model(model_file)
     metadata = parse_file(trainning_file)
-
-    # generate samples
-    samples, mean_shape = generate_samples(metadata, oversampling_amount)
-    
-    # generate pixel coords
-    pixel_coords, anchor_indices, deltas = randomly_sample_pixel_coords(mean_shape, cascade_depth, num_test_coords)
-    
-    # generate regression forests
-    forests = []
-    for cascade in range(cascade_depth):
-        extract_pixel_intensities(samples, mean_shape, anchor_indices[cascade], deltas[cascade])
-        forest = []
-        for i in range(len(num_trees_per_cascade)):
-            tree = make_regression_tree(samples, pixel_coords[cascade], tree_depth, num_test_coords, num_test_splits, lamda, nu)
-            forest.append(tree)
-        forests.append(forest)
-    
-    return forests, mean_shape, pixel_coords, anchor_indices, deltas
-
-def predict(forests, mean_shape, anchor_indices, deltas, img, box):
-    s = sample(img, box)
-    s.current_shape = np.copy(mean_shape)
-    for cascade, forest in enumerate(forests):
-        extract_pixel_intensities([s], mean_shape, anchor_indices[cascade], deltas[cascade])
-        for tree in forest:
-            s.current_shape += tree.leaf_value(s.pixel_intensities)
-    return img_coord(box, s.current_shape)
-
-def train_error(samples):
-    diff_shape = np.float32([s.target_shape - s.current_shape for s in samples])
-    error = np.sqrt(diff_shape**2)
-    error = np.average(error)
-    print("train error: " + str(error))
-
-
-if __name__ == "__main__":
-    trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/w300/trainning_landmarks.xml"
-    # trainning_file = "D:/share/dlib-19.17/examples/faces/training_with_face_landmarks.xml"
-    metadata = parse_file(trainning_file)
-    
-    # tranning params
-    oversampling_amount = 10
-    cascade_depth = 10
-    num_test_coords = 400
-    num_trees_per_cascade = 500
-    tree_depth = 4
-    num_test_splits = 20
-    lamda = 0.1
-    nu = 0.1
-
-    #test_generate_samples(metadata)
-    samples, mean_shape = generate_samples(metadata, oversampling_amount)
-
-    #test_randomly_sample_pixel_coords(mean_shape)
-    pixel_coords, anchor_indices, deltas = randomly_sample_pixel_coords(mean_shape, cascade_depth, num_test_coords)
-    forests = []
-    for cascade in range(cascade_depth):
-        print("trainning forest %d ... " % cascade)
-        extract_pixel_intensities(samples, mean_shape, anchor_indices[cascade], deltas[cascade])
-        forest = []
-        for i in range(num_trees_per_cascade):
-            print("make regression tree %d ..." % i) 
-            tree = make_regression_tree(samples, pixel_coords[cascade], tree_depth, num_test_coords, num_test_splits, lamda, nu)
-            forest.append(tree)
-            train_error(samples)
-            print("make regression tree %d finished" % i)
-        print("trainning forest %d finished" % cascade)    
-        forests.append(forest)
-
     for d in metadata:
         img = cv2.imread(d["file"])
         h, w = img.shape[:2]
@@ -380,17 +386,17 @@ if __name__ == "__main__":
             box = d["box"]
             for (x, y)  in d["landmarks"]:
                 cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
-            landmarks = predict(forests, mean_shape, anchor_indices, deltas, img, box)
+            landmarks = predict(model_data, img, box)
             for (x, y) in landmarks:
                 cv2.circle(img, (int(x), int(y)), 1, (0, 0, 255), 2)
             cv2.imshow("image", img)
             if cv2.waitKey(3000) == ord('q'):
                 break
 
+if __name__ == "__main__":
+    trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100_w300_tranning_landmarks.xml"
+    model_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100_w300_landmarks.model"
+    train_model(trainning_file, model_file)
+    if os.name == "nt":
+        test_landmarks_model(trainning_file, model_file)
 
-    
-
-
-
-    
-    
