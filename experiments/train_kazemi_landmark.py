@@ -46,18 +46,14 @@ class regression_tree(object):
     def __init__(self, depth, leaf_shape):
         self.nodes = [split_feature() for i in range(np.power(2, depth)-1)]
         self.leaf_values = np.zeros((np.power(2, depth),) + leaf_shape)
-        self.left_child = lambda idx: 2*idx + 1
-        self.right_child = lambda idx: 2*idx + 2
         self.num_nodes = len(self.nodes)
-        self.num_leaves = self.num_nodes + 1
-
     def leaf_value(self, pixel_intensities):
         i = 0
         while i < len(self.nodes):
             if pixel_intensities[self.nodes[i].idx1] - pixel_intensities[self.nodes[i].idx2] > self.nodes[i].thresh:
-                i = self.left_child(i)
+                i = 2*i + 1
             else:
-                i = self.right_child(i)
+                i = 2*i + 2
         i = i - len(self.nodes)
         return self.leaf_values[i]
 
@@ -259,7 +255,7 @@ def train_model(trainning_file, model_file):
     num_test_coords = 400
     num_trees_per_cascade = 500
     tree_depth = 4
-    num_test_splits = 20
+    num_test_splits = 100
     lamda = 0.1
     nu = 0.1
 
@@ -296,6 +292,7 @@ def train_model(trainning_file, model_file):
     print("model saved")
 
 def load_model(model_file):
+    assert(os.path.exists(model_file))
     with open(model_file, "rb") as f:
         model_data = pickle.load(f)
     return model_data
