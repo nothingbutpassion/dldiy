@@ -82,7 +82,7 @@ def make_square_box(box):
     x, y, w, h = box[:4]
     s = np.sqrt(w*h)
     x += (w - s)/2
-    y += (h - s)/1.3
+    y += (h - s)
     w = s
     h = s
     return (x, y, w, h)
@@ -156,7 +156,7 @@ def usage():
 
 def parse_arguments():
     try:
-	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input=" "output="])
+	    opts, _ = getopt.getopt(sys.argv[1:], "hi:m:", ["help", "input="])
     except getopt.GetoptError as err:
         print(err)
         usage()
