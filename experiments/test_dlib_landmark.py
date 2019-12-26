@@ -151,21 +151,21 @@ def test_detection(tflite_file):
             break
 
 def usage():
-    print("Usage: %s -i <tflite-file>  [-m <model-version>]" % sys.argv[0])
+    print("Usage: %s -i <tflite-file>  [-v <model-version>]" % sys.argv[0])
     sys.exit(-1)
 
 def parse_arguments():
     try:
-	    opts, _ = getopt.getopt(sys.argv[1:], "hi:m:", ["help", "input="])
+	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input="])
     except getopt.GetoptError as err:
         print(err)
         usage()
-    model_version = "v1"
+    model_version = "1"
     tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.tflite" 
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()
-        elif o == "-m":
+        elif o == "-v":
             model_version = a
         elif o in ("-i", "--input"):
             tflite_file = a
@@ -173,9 +173,11 @@ def parse_arguments():
 
 if __name__ == "__main__":
     tflite_file, model_version = parse_arguments()
+    print("tflite model file: " + tflite_file)
+    print("face model version: " + model_version)
     # NOTES: 
     # For v1 model, _aspects = [0.5, 0.8, 1.0]
     # For v2 model, _aspects = [0.5, 1.0, 1.5]
-    if model_version != "v1":
+    if model_version == "2":
         _aspects = [0.5, 1.0, 1.5]
     test_detection(tflite_file)

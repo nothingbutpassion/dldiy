@@ -60,7 +60,7 @@ def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-def decode(features, threshold=0.3, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
+def decode(features, threshold=0.5, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
@@ -147,40 +147,29 @@ def test_detection(tflite_file):
         if cv2.waitKey(20) == ord('q'):
             break
 
-
-def usage():
-    print("""Usage: <this-app> -m <model-version> -i <keras-h5-file> -o <tflite-file> 
-                 Or <this-app> -m <model-version> -input <keras-h5-file> --output <tflite-file>
-                 Or <this-app> -h
-                 Or <this-app> --help 
-    """)
-
 def parse_arguments():
     try:
-	    opts, args = getopt.getopt(sys.argv[1:], "hi:o:m:", ["help", "input=" "output="])
+	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input=", "version="])
     except getopt.GetoptError as err:
         print(err)
         sys.exit(-1)
-    model_version = "v1"    
-    keras_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.h5"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.tflite" 
+    model_version = "1"    
+    model_path = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.h5"
     for o, a in opts:
         if o in ("-h", "--help"):
-            usage()
+            print("Usage: <this-app> -m <model-version> -i <keralh5-file|tflite-file>")
             sys.exit(0)
-        elif o == "-m":
+        elif o in ("-v", "--version"):
             model_version = a
         elif o in ("-i", "--input"):
-            keras_file = a
-        elif o in ("-o", "--output"):
-            tflite_file = a
-    return keras_file, tflite_file, model_version
+            model_path = a
+    return model_path, model_version
 
 if __name__ == "__main__":
-    keras_file, tflite_file, model_version = parse_arguments()
-    if model_version == "v1":
-        g_aspects = [0.5, 0.8, 1.0]
-    elif model_version == "v2":
+    model_path, model_version = parse_arguments()
+    print("model file: " + model_path)
+    print("model version: " + model_version)
+    if model_version == "2":
         g_aspects = [0.5, 1.0, 1.5]
     custom_objects = {
         "detection_loss": detection_loss, 
@@ -189,6 +178,9 @@ if __name__ == "__main__":
         "precision": precision,
         "recall": recall
     }
-    keras_to_tflite = keras_to_tflite_v2 if int(tf.__version__[0]) > 1 else keras_to_tflite_v1
-    keras_to_tflite(keras_file, tflite_file, custom_objects)
+    tflite_file = model_path
+    if model_path[-3:] == ".h5":
+        tflite_file = model_path[-3:] + ".tflite"
+        keras_to_tflite = keras_to_tflite_v2 if int(tf.__version__[0]) > 1 else keras_to_tflite_v1
+        keras_to_tflite(model_path, tflite_file, custom_objects)
     test_detection(tflite_file)

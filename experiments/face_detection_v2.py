@@ -217,12 +217,6 @@ def load_modle(model_path):
         "precision": precision,
         "recall": recall},
         compile=True)
-    # trainable = False
-    # for layer in model.layers:
-    #     if layer.name == "block_12_add":
-    #         trainable = True
-    #     layer.trainable = trainable
-    # model.compile(optimizer=optimizers.Adagrad(), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
     model.summary()
     return model
 
@@ -300,10 +294,10 @@ def test_model(model):
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
-        w, h = image_size
+        W, H = image_size
         # ground truth bounding boxes
         boxes = decode(batch_y[i])
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        boxes = [[(b[0]-0.5*b[2])*W, (b[1]-0.5*b[3])*H, b[2]*W, b[3]*H] for b in boxes]
         for box in boxes:
             (x, y, w, h) = box[:4]
             print("Sample %d, true_box=(%d,%d,%d,%d)" % (i, x, y, w, h))
@@ -311,7 +305,7 @@ def test_model(model):
             ax.add_patch(rect)
         # predicted bounding boxes
         boxes = decode(y_pred[i])
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
+        boxes = [[(b[0]-0.5*b[2])*W, (b[1]-0.5*b[3])*H, b[2]*W, b[3]*H, b[4]] for b in boxes]
         for box in boxes:
             (x, y, w, h, c) = box
             print("Sample %d, predicted_box=(%d,%d,%d,%d) confidence: %f" % (i, x, y, w, h, c))
@@ -320,8 +314,16 @@ def test_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v4_2160.h5"
-    model = load_modle(model_path)
-    # model = build_modle()
-    train_model(model, model_path)
-    test_model(model)
+    if len(sys.argv) != 3 or sys.argv[1] not in ("train", "test"):
+        print("Usage: %s <train|test>  <h5_file> where: <h5_file> = <path_prefix>_<epochs>.h5" % sys.argv[0])
+        sys.exit(-1)
+    action = sys.argv[1]
+    model_path = sys.argv[2]
+    if action == "train" :
+        model = build_modle() if not os.path.exists(model_path) else load_modle(model_path)
+        train_model(model, model_path)
+    elif os.path.exists(model_path):
+        model = load_modle(model_path)
+        test_model(model)
+    else:
+        print(model_path + "does not exist")

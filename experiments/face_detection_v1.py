@@ -16,6 +16,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import datasets.widerface as widerface
 import preprocessing.imgkit as imgkit
 
+g_scales = [0.3, 0.5, 0.7, 0.9]
+g_sizes = [[10,10], [5,5], [3,3], [1,1]]
+g_aspects = [0.5, 0.8, 1.0]
 
 def iou(box1, box2):
     x1, y1, w1, h1 = box1
@@ -38,10 +41,11 @@ def generate_dboxes(scale, size, aspects):
     return dboxes
 
 # NOTES:
+# gboxes - ground-truth bunding boxes, dboxes - default bunding boxes
 # Each box in gboxes is a tuple with 4 value: bx, by, bw, bh
 # bx, by is the center point of the box (nomalized to image size)
 # bw, by is the width, heigh of the box (nomalized to image size)
-def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def encode(gboxes, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     dboxes = []
     for i in range(len(scales)):
         dboxes.append(generate_dboxes(scales[i], sizes[i], aspects))
@@ -69,7 +73,7 @@ def encode(gboxes, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1
             # print("encode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
     return features
 
-def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
     for i in range(1, len(feature_nums)):
@@ -87,15 +91,14 @@ def get_dbox(feature_index, scales=[0.3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], 
     dx, dy, dw, dh = (j+0.5)/cols, (i+0.5)/rows, scale*np.sqrt(aspects[k]), scale/np.sqrt(aspects[k])
     return [dx, dy, dw, dh]
 
-
-def decode(features, scales=[0,3, 0.5, 0.7, 0.9], sizes=[[10,10], [5,5], [3,3], [1,1]], aspects=[0.5, 0.8, 1.0]):
+def decode(features, threshold=0.3, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     boxes = []
     for i in range(len(features)):
         c0, c1, x, y, w, h = features[i]
         max_c = max(c0, c1)
         c0, c1 = c0 - max_c, c1 - max_c
         c = np.exp(c0-max_c)/(np.exp(c0-max_c) + np.exp(c1-max_c))
-        if c > 0.28:
+        if c > threshold:
             dx, dy, dw, dh = get_dbox(i)
             gx, gy, gw, gh = x*dw+dx, y*dh+dy, np.exp(w)*dw, np.exp(h)*dh
             # print("decode: index=%d, dbox=%s, gbox=%s" % (i, str([dx, dy, dw, dh]), str([gx, gy, gw, gh])))
@@ -199,6 +202,7 @@ def build_modle():
     x4 = layers.Conv2D(3*6, 3, padding="valid")(x4)
     x4 = layers.Reshape((3*1*1, 6))(x4)
     model = models.Model(inputs=base.input, outputs=layers.Concatenate(axis=1)([x1,x2,x3,x4]))
+    # TODO: try Adagrad or other optimizers
     model.compile(optimizer=optimizers.SGD(lr=0.001, momentum=0.9, decay=0.00005), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
     model.summary()
     return model
@@ -211,12 +215,6 @@ def load_modle(model_path):
         "precision": precision,
         "recall": recall},
         compile=True)
-    # trainable = False
-    # for layer in model.layers:
-    #     if layer.name == "block_12_add":
-    #         trainable = True
-    #     layer.trainable = trainable
-    # model.compile(optimizer=optimizers.Adagrad(), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
     model.summary()
     return model
 
@@ -270,8 +268,8 @@ def train_model(model, save_path=None):
         if save_path != None:
             p = save_path.rfind('_')
             n = int(save_path[p+1: len(save_path)-3])
-            print("save model for epochs " + str(n + i*20))
-            model.save(save_path[:p+1] + str(n + i*20) + ".h5")
+            print("save model for epochs " + str(n + i*10))
+            model.save(save_path[:p+1] + str(n + i*10) + ".h5")
 
 def test_model(model):
     crop_size = (240, 180)
@@ -289,10 +287,10 @@ def test_model(model):
         ax.set_title("Sample %d" % i)
         ax.axis('off')
         ax.imshow(np.array(batch_x[i]*255+127.5, dtype='uint8'))
-        w, h = image_size
+        W, H = image_size
         # ground truth bounding boxes
         boxes = decode(batch_y[i])
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        boxes = [[(b[0]-0.5*b[2])*W, (b[1]-0.5*b[3])*H, b[2]*W, b[3]*H] for b in boxes]
         for box in boxes:
             (x, y, w, h) = box[:4]
             print("Sample %d, true_box=(%d,%d,%d,%d)" % (i, x, y, w, h))
@@ -300,7 +298,7 @@ def test_model(model):
             ax.add_patch(rect)
         # predicted bounding boxes
         boxes = decode(y_pred[i])
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
+        boxes = [[(b[0]-0.5*b[2])*W, (b[1]-0.5*b[3])*H, b[2]*W, b[3]*H, b[4]] for b in boxes]
         for box in boxes:
             (x, y, w, h, c) = box
             print("Sample %d, predicted_box=(%d,%d,%d,%d) confidence: %f" % (i, x, y, w, h, c))
@@ -309,8 +307,16 @@ def test_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/../datasets/widerface/face_model_v1_2100.h5"
-    model = load_modle(model_path)
-    # model = build_modle()
-    train_model(model, model_path)
-    test_model(model)
+    if len(sys.argv) != 3 or sys.argv[1] not in ("train", "test"):
+        print("Usage: %s <train|test>  <h5_file> where: <h5_file> = <path_prefix>_<epochs>.h5" % sys.argv[0])
+        sys.exit(-1)
+    action = sys.argv[1]
+    model_path = sys.argv[2]
+    if action == "train" :
+        model = build_modle() if not os.path.exists(model_path) else load_modle(model_path)
+        train_model(model, model_path)
+    elif os.path.exists(model_path):
+        model = load_modle(model_path)
+        test_model(model)
+    else:
+        print(model_path + "does not exist")
