@@ -1,4 +1,3 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import datasets.mnist as mnist
 import layers
