@@ -1,3 +1,4 @@
+import numpy as np
 import matplotlib.pyplot as plt
 import datasets.mnist as mnist
 from tensorflow.keras import models
@@ -22,8 +23,8 @@ def test_mnist():
     epochs = range(1, len(history["loss"])+1)
     plt.plot(epochs, history["loss"], 'ro', label="Traning loss")
     plt.plot(epochs, history["val_loss"], 'go',label="Validating loss")
-    plt.plot(epochs, history["acc"], 'r', label="Traning accuracy")
-    plt.plot(epochs, history["val_acc"], 'g', label="Validating accuracy")
+    plt.plot(epochs, history["accuracy"], 'r', label="Traning accuracy")
+    plt.plot(epochs, history["val_accuracy"], 'g', label="Validating accuracy")
     plt.title('Training/Validating loss/accuracy')
     plt.xlabel('Epochs')
     plt.ylabel('Loss/Accuracy')
@@ -56,4 +57,4 @@ def test_mnist_with_cov2d():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_mnist_with_cov2d()
+    test_mnist()
