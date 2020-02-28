@@ -33,13 +33,13 @@ def test_mnist():
 
 def test_mnist_with_cov2d():
     (train_x, train_y), (test_x, test_y) = mnist.load_data(flatten=False)
-    val_x = train_x[50000:]
+    val_x = train_x[50000:].transpose(0, 2, 3, 1)
     val_y = train_y[50000:]
-    train_x = train_x[:50000]
+    train_x = train_x[:50000].transpose(0, 2, 3, 1)
     train_y = train_y[:50000]
     model = models.Sequential()
-    model.add(layers.Conv2D(4, (3, 3), strides=(1,1), padding='same', data_format="channels_first", activation="relu", input_shape=(1, 28, 28)))
-    model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2), data_format="channels_first"))
+    model.add(layers.Conv2D(4, (3, 3), strides=(1,1), padding='same', data_format="channels_last", activation="relu", input_shape=(28, 28, 1)))
+    model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
     model.add(layers.Flatten())
     model.add(layers.Dense(10, activation="softmax"))
     model.compile(optimizer=optimizers.SGD(lr=0.001), loss=losses.categorical_crossentropy, metrics=['accuracy'])
@@ -57,4 +57,4 @@ def test_mnist_with_cov2d():
     plt.show(block=True)
 
 if __name__ == "__main__":
-    test_mnist()
+    test_mnist_with_cov2d()
