@@ -2,6 +2,7 @@ import os
 import sys
 import random
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -21,13 +22,6 @@ g_scales = [0.3, 0.5, 0.7, 0.9]
 g_sizes = [[10,10], [5,5], [3,3], [1,1]]
 g_aspects = [0.5, 1.0, 1.5]
 
-def image_draw_boxes(image, boxes, color=(255,0,0), width=2):
-    d = ImageDraw.Draw(image)
-    for box in boxes:
-        [x, y, w, h] = box[:4]
-        d.rectangle([x,y,x+w,y+h], outline=color, width=width)
-        d.point([(x+w/2-0.5,y+h/2-0.5), (x+w/2+0.5,y+h/2-0.5), (x+w/2-0.5,y+h/2+0.5), (x+w/2+0.5,y+h/2+0.5)], fill=color)
-
 def image_crop(image, rect, boxes=None):
     image = image.crop(rect)
     if boxes is None:
@@ -44,18 +38,12 @@ def image_resize(image, size, boxes=None):
     boxes = np.array([[b[0]*sx, b[1]*sy, b[2]*sx, b[3]*sy] for b in boxes])
     return image, boxes
 
-# flag can be one of the following:
-# Image.FLIP_LEFT_RIGHT
-# Image.FLIP_TOP_BOTTOM
-def image_flip(image, boxes=None, flag=Image.FLIP_LEFT_RIGHT):
-    image = image.transpose(flag)
+def image_flip(image, boxes=None):
+    image = image.transpose(Image.FLIP_LEFT_RIGHT)
     if boxes is None:
         return image
-    w, h = image.size
-    if flag == Image.FLIP_LEFT_RIGHT:
-        boxes = np.array([[w-1-b[0]-b[2], b[1], b[2], b[3]] for b in boxes])
-    else:
-        boxes = np.array([[b[0], h-1-b[1]-b[3], b[2], b[3]] for b in boxes])
+    w = image.size[0]
+    boxes = np.array([[w-b[0]-b[2], b[1], b[2], b[3]] for b in boxes])
     return image, boxes
 
 def iou(box1, box2):
@@ -151,26 +139,33 @@ def test_codec():
     data = widerface.transform(data, 11, crop_sizes[0], image_size, 0.5) + widerface.transform(data, 11, crop_sizes[1], image_size, 0.5)
     random.shuffle(data)
     for sample in data:
-        image = image_crop(Image.open(sample["image"]), sample["crop"])
-        boxes = np.array(sample["boxes"])
-        print("image: " + sample["image"])
-        print("croped boxes: " + str(boxes))
+        img = cv2.imread(sample["image"])
+        x, y, w, h = sample["crop"]
+        img = img[y:y+h, x:x+w]
+        boxes = sample["boxes"]
+        print("image: " + str(img.shape))
+        print("crop boxes: " + str(boxes))
         if sample["resize"]:
-            image, boxes = image_resize(image, image_size, boxes)
+            sx, sy = image_size[0] / img.shape[1], image_size[1] / img.shape[0]
+            img = cv2.resize(img, image_size)
+            boxes = np.array([[b[0]*sx, b[1]*sy, b[2]*sx, b[3]*sy] for b in boxes])
             print("resized boxes: " + str(boxes))
         if sample["flip"]:
-            image, boxes = image_flip(image, boxes)
+            img = cv2.flip(img, 1)
+            boxes = np.array([[img.shape[1]-b[0]-b[2], b[1], b[2], b[3]] for b in boxes])
             print("fliped boxes: " + str(boxes))
-        w, h = image.size
+        w, h = img.shape[1], img.shape[0]
         # print("before encode: boxes=%s" % str(boxes))
         boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
         features = encode(boxes)
         boxes=decode(features)
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
-        # print("after decode: boxes=%s" % str(boxes))
-        image_draw_boxes(image, boxes, color=(0,255,0))
-        plt.imshow(image)
-        plt.show()
+        print("codec boxes: %s" % str(boxes))
+        for x, y, w, h in boxes:
+            cv2.rectangle(img, (int(x), int(y)), (int(x+w), int(y+h)), color=(0,255,0))
+        # cv2.namedWindow("image", cv2.WINDOW_NORMAL)
+        cv2.imshow("image", img)
+        cv2.waitKey(10000)
 
 def precision(y_true, y_pred):
     c = K.softmax(y_pred[:,:,:2])
