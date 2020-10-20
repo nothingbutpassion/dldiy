@@ -2,7 +2,7 @@ import os
 import sys
 import random
 import numpy as np
-import PIL.Image as Image
+from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import tensorflow as tf
@@ -15,12 +15,48 @@ from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import datasets.widerface as widerface
-import preprocessing.imgkit as imgkit
 
 # model params
 g_scales = [0.3, 0.5, 0.7, 0.9]
 g_sizes = [[10,10], [5,5], [3,3], [1,1]]
 g_aspects = [0.5, 1.0, 1.5]
+
+def image_draw_boxes(image, boxes, color=(255,0,0), width=2):
+    d = ImageDraw.Draw(image)
+    for box in boxes:
+        [x, y, w, h] = box[:4]
+        d.rectangle([x,y,x+w,y+h], outline=color, width=width)
+        d.point([(x+w/2-0.5,y+h/2-0.5), (x+w/2+0.5,y+h/2-0.5), (x+w/2-0.5,y+h/2+0.5), (x+w/2+0.5,y+h/2+0.5)], fill=color)
+
+def image_crop(image, rect, boxes=None):
+    image = image.crop(rect)
+    if boxes is None:
+        return image
+    boxes=np.array([[b[0]-rect[0], b[1]-rect[1], b[2], b[3]] for b in boxes])
+    return image, boxes
+
+def image_resize(image, size, boxes=None):
+    sx = float(size[0])/image.size[0]
+    sy = float(size[1])/image.size[1]
+    image = image.resize(size, Image.LINEAR)
+    if boxes is None:
+        return image
+    boxes = np.array([[b[0]*sx, b[1]*sy, b[2]*sx, b[3]*sy] for b in boxes])
+    return image, boxes
+
+# flag can be one of the following:
+# Image.FLIP_LEFT_RIGHT
+# Image.FLIP_TOP_BOTTOM
+def image_flip(image, boxes=None, flag=Image.FLIP_LEFT_RIGHT):
+    image = image.transpose(flag)
+    if boxes is None:
+        return image
+    w, h = image.size
+    if flag == Image.FLIP_LEFT_RIGHT:
+        boxes = np.array([[w-1-b[0]-b[2], b[1], b[2], b[3]] for b in boxes])
+    else:
+        boxes = np.array([[b[0], h-1-b[1]-b[3], b[2], b[3]] for b in boxes])
+    return image, boxes
 
 def iou(box1, box2):
     x1, y1, w1, h1 = box1
@@ -115,15 +151,15 @@ def test_codec():
     data = widerface.transform(data, 11, crop_sizes[0], image_size, 0.5) + widerface.transform(data, 11, crop_sizes[1], image_size, 0.5)
     random.shuffle(data)
     for sample in data:
-        image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
+        image = image_crop(Image.open(sample["image"]), sample["crop"])
         boxes = np.array(sample["boxes"])
         print("image: " + sample["image"])
         print("croped boxes: " + str(boxes))
         if sample["resize"]:
-            image, boxes = imgkit.resize(image, image_size, boxes)
+            image, boxes = image_resize(image, image_size, boxes)
             print("resized boxes: " + str(boxes))
         if sample["flip"]:
-            image, boxes = imgkit.flip(image, boxes)
+            image, boxes = image_flip(image, boxes)
             print("fliped boxes: " + str(boxes))
         w, h = image.size
         # print("before encode: boxes=%s" % str(boxes))
@@ -132,7 +168,7 @@ def test_codec():
         boxes=decode(features)
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
         # print("after decode: boxes=%s" % str(boxes))
-        imgkit.draw_boxes(image, boxes, color=(0,255,0))
+        image_draw_boxes(image, boxes, color=(0,255,0))
         plt.imshow(image)
         plt.show()
 
@@ -244,12 +280,12 @@ class DataGenerator(utils.Sequence):
         batch_y = np.zeros((batch_size,) + self.feature_shape)
         for i in range(start_index, end_index):
             sample = self.data[i]
-            image = imgkit.crop(Image.open(sample["image"]), sample["crop"])
+            image = image_crop(Image.open(sample["image"]), sample["crop"])
             boxes = np.array(sample["boxes"])
             if sample["resize"]:
-                image, boxes = imgkit.resize(image, (w, h), boxes)
+                image, boxes = image_resize(image, (w, h), boxes)
             if sample["flip"]:
-                image, boxes = imgkit.flip(image, boxes)
+                image, boxes = image_flip(image, boxes)
             boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
             batch_x[i-start_index] = (np.array(image) - 127.5)/255
             batch_y[i-start_index] = encode(boxes)
@@ -314,16 +350,17 @@ def test_model(model):
     plt.show()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("train", "test"):
-        print("Usage: %s <train|test>  <h5_file> where: <h5_file> = <path_prefix>_<epochs>.h5" % sys.argv[0])
-        sys.exit(-1)
-    action = sys.argv[1]
-    model_path = sys.argv[2]
-    if action == "train" :
-        model = build_modle() if not os.path.exists(model_path) else load_modle(model_path)
-        train_model(model, model_path)
-    elif os.path.exists(model_path):
-        model = load_modle(model_path)
-        test_model(model)
-    else:
-        print(model_path + "does not exist")
+    test_codec()
+    # if len(sys.argv) != 3 or sys.argv[1] not in ("train", "test"):
+    #     print("Usage: %s <train|test>  <h5_file> where: <h5_file> = <path_prefix>_<epochs>.h5" % sys.argv[0])
+    #     sys.exit(-1)
+    # action = sys.argv[1]
+    # model_path = sys.argv[2]
+    # if action == "train" :
+    #     model = build_modle() if not os.path.exists(model_path) else load_modle(model_path)
+    #     train_model(model, model_path)
+    # elif os.path.exists(model_path):
+    #     model = load_modle(model_path)
+    #     test_model(model)
+    # else:
+    #     print(model_path + "does not exist")
