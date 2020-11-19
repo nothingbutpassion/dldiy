@@ -14,7 +14,6 @@ from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import datasets.widerface as widerface
-import preprocessing.imgkit as imgkit
 
 g_scales = [0.3, 0.5, 0.7, 0.9]
 g_sizes = [[10,10], [5,5], [3,3], [1,1]]

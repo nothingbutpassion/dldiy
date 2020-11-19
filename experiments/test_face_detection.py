@@ -13,34 +13,14 @@ g_sizes = [[10,10], [5,5], [3,3], [1,1]]
 # v2 model: g_aspects = [0.5, 1.0, 1.5]
 g_aspects = [0.5, 0.8, 1.0]
 
-def recall(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def precision(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def localization_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def confidence_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-def detection_loss(y_true, y_pred):
-    return tf.keras.backend.sum(y_true-y_pred)
-
-# NOTES:
-# This function is tested on TF 1.14
-# see https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/python/lite.py
-def keras_to_tflite_v1(keras_file, tflite_file, custom_objects):
-    converter = tf.lite.TFLiteConverter.from_keras_model_file(keras_file, custom_objects=custom_objects)
-    tflite_model = converter.convert()
-    open(tflite_file, "wb").write(tflite_model)
-
 # NOTES:
 # This function is tested on TF 2.0
 # see https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#from_keras_model
-def keras_to_tflite_v2(keras_file, tflite_file, custom_objects):
-    model = keras.models.load_model(keras_file, custom_objects)
+def keras_to_tflite_v2(keras_file, tflite_file):
+    model = keras.models.load_model(keras_file, compile=False)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     tflite_model = converter.convert()
     open(tflite_file, "wb").write(tflite_model)
-
 
 def get_dbox(feature_index, scales=g_scales, sizes=g_sizes, aspects=g_aspects):
     aspect_num = len(aspects)
@@ -171,16 +151,8 @@ if __name__ == "__main__":
     print("model version: " + model_version)
     if model_version == "2":
         g_aspects = [0.5, 1.0, 1.5]
-    custom_objects = {
-        "detection_loss": detection_loss, 
-        "confidence_loss": confidence_loss, 
-        "localization_loss": localization_loss,
-        "precision": precision,
-        "recall": recall
-    }
     tflite_file = model_path
     if model_path[-3:] == ".h5":
         tflite_file = model_path[-3:] + ".tflite"
-        keras_to_tflite = keras_to_tflite_v2 if int(tf.__version__[0]) > 1 else keras_to_tflite_v1
-        keras_to_tflite(model_path, tflite_file, custom_objects)
+        keras_to_tflite_v2(model_path, tflite_file)
     test_detection(tflite_file)

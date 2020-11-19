@@ -11,15 +11,6 @@ _scales  = [0.3, 0.5, 0.7, 0.9]
 _sizes   = [[10,10], [5,5], [3,3], [1,1]]
 _aspects = [0.5, 0.8, 1.0]
 
-# NOTES:
-# This function is tested on TF 1.14
-# It has issues in TF 2.0-alpha 
-# see https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/python/lite.py
-def keras_to_tflite(keras_file, tflite_file, custom_objects):
-    converter = tf.lite.TFLiteConverter.from_keras_model_file(keras_file, custom_objects=custom_objects)
-    tflite_model = converter.convert()
-    open(tflite_file, "wb").write(tflite_model)
-
 def get_dbox(feature_index, scales=_scales, sizes=_sizes, aspects=_aspects):
     aspect_num = len(aspects)
     feature_nums = [s[0]*s[1]*aspect_num for s in sizes]
