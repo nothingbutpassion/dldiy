@@ -8,16 +8,16 @@ import torch.optim as optim
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv = nn.Conv2d(1, 4, 3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(1, 4, 3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(1, 4, 3, stride=1, padding=1, bias=False)
         self.fc = nn.Linear(14*14*4, 10)
-        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = F.relu(self.conv(x))
+        # x = F.relu(self.conv1(x))
+        x = self.conv1(x) + self.conv2(x*x)
         x = F.max_pool2d(x, 2)
         x = x.view(-1, 14*14*4)
         x = F.relu(self.fc(x))
-        x = self.softmax(x)
         return x
 
 def accuracy(y_pred, y_true):
@@ -33,8 +33,8 @@ def test_mnist_with_cov2d():
     net = Net()
     dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     net.to(dev)
-    optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
-    epochs = 36
+    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    epochs = 20
     batch_size = 200
     batches = len(train_x)//batch_size
     history = {"loss":[], "val_loss":[], "accuracy":[], "val_accuracy":[]}
