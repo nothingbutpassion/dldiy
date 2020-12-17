@@ -64,7 +64,7 @@ def _convert():
         pickle.dump(dataset, f, -1)
     print("saved as " + save_file)
 
-def init_data():
+def _init_data():
     _download()
     _convert()
 
@@ -72,7 +72,7 @@ def load_data(normalize=True, flatten=True, one_hot_label=True):
     """MNIST: http://yann.lecun.com/exdb/mnist/"""
     
     if not os.path.exists(save_file):
-        init_data()
+        _init_data()
     
     with open(save_file, "rb") as f:
         dataset = pickle.load(f)
@@ -92,5 +92,4 @@ def load_data(normalize=True, flatten=True, one_hot_label=True):
         for k in ("train_image", "test_image"):
             dataset[k] = dataset[k].reshape(-1, 1, 28, 28)
 
-    return (dataset["train_image"], dataset["train_label"]), (dataset["test_image"], dataset["test_label"])    
-
+    return (dataset["train_image"], dataset["train_label"]), (dataset["test_image"], dataset["test_label"])

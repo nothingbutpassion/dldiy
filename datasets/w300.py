@@ -1,8 +1,6 @@
 import os
 import zipfile
 import pickle
-import numpy as np
-import cv2
 
 dataset_dir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + "w300"
 save_file = dataset_dir + os.path.sep + "300w.pkl"
@@ -24,15 +22,13 @@ def _parse_data(dir, file_prefix):
         with open(pts_file, "r") as f:
             lines = f.readlines()
             fs = lines[1].strip().split()
-            assert(fs[1] == "68")
-            assert(len(lines) >= 72)
+            assert (fs[1] == "68" and len(lines) >= 72)
             for i in range(3, 71):
                 fs = lines[i].strip().split()
                 item["landmarks"].append([float(fs[0]), float(fs[1])])
-        assert(os.path.exists(png_file))
+        assert os.path.exists(png_file)
         data.append(item)
     return data
-
 
 def _parse_files(root):
     indoor_dir = os.path.join(root, "300W", "01_Indoor")
@@ -40,7 +36,6 @@ def _parse_files(root):
     indoor_data = _parse_data(indoor_dir, "indoor_")
     outdoor_data = _parse_data(outdoor_dir, "outdoor_")
     return indoor_data, outdoor_data
-
 
 def _extract_files(root):
     if not os.path.exists(root + os.path.sep + "300W"):
@@ -55,8 +50,7 @@ def _extract_files(root):
             f.extractall(root)
             print("saved as %s" % root + os.path.sep + "300W")
 
-
-def init_data(root):
+def _init_data(root):
     _extract_files(root)
     indoor_data, outdoor_data = _parse_files(root)
     dataset = (indoor_data, outdoor_data)
@@ -71,19 +65,20 @@ def load_data(root=dataset_dir):
     300 Faces In-the-Wild Challenge (300-W), ICCV 2013
     see https://ibug.doc.ic.ac.uk/resources/300-W/
     """
-    assert(os.path.exists(root))
+    assert os.path.exists(root)
     if not os.path.exists(save_file):
-        init_data(root)
+        _init_data(root)
     with open(save_file, "rb") as f:
         dataset = pickle.load(f)
     return dataset
 
-if __name__ == "__main__":
-    data = load_data()
-    for s in data[0]:
-        img = cv2.imread(s["image"])
-        for (x, y) in s["landmarks"]:
-            cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
-        cv2.imshow("image", img)
-        if cv2.waitKey(3000) == ord('q'):
-            break
+# if __name__ == "__main__":
+#     import cv2
+#     data = load_data()
+#     for s in data[0]:
+#         img = cv2.imread(s["image"])
+#         for (x, y) in s["landmarks"]:
+#             cv2.circle(img, (int(x), int(y)), 1, (0, 255, 0), 2)
+#         cv2.imshow("image", img)
+#         if cv2.waitKey(3000) == ord('q'):
+#             break

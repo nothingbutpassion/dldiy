@@ -1,31 +1,21 @@
-import os
 import sys
 import numpy as np
+from pathlib import Path
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import tensorflow as tf
-from tensorflow.keras import models
-from tensorflow.keras import layers
-from tensorflow.keras import utils
-from tensorflow.keras import optimizers
-from tensorflow.keras import backend as K
+import tensorflow.keras.backend as K
+from tensorflow.keras import models, layers, utils, optimizers
 from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import datasets.widerface as widerface
+sys.path.append(Path(__file__).absolute().parents[1].as_posix())
+from datasets import widerface
 
 g_scales = [0.3, 0.5, 0.7, 0.9]
 g_sizes = [[10,10], [5,5], [3,3], [1,1]]
 g_aspects = [0.5, 0.8, 1.0]
 
-
-def image_draw_boxes(image, boxes, color=(255,0,0), width=2):
-    d = ImageDraw.Draw(image)
-    for box in boxes:
-        [x, y, w, h] = box[:4]
-        d.rectangle([x,y,x+w,y+h], outline=color, width=width)
-        d.point([(x+w/2-0.5,y+h/2-0.5), (x+w/2+0.5,y+h/2-0.5), (x+w/2-0.5,y+h/2+0.5), (x+w/2+0.5,y+h/2+0.5)], fill=color)
 def image_crop(image, rect, boxes=None):
     image = image.crop(rect)
     if boxes is None:
@@ -133,34 +123,6 @@ def decode(features, threshold=0.3, scales=g_scales, sizes=g_sizes, aspects=g_as
             boxes.append([gx, gy, gw, gh, c])
     return boxes
 
-def test_codec():
-    crop_size = (240, 180 )
-    image_size = (160, 160)
-    data = widerface.load_data()
-    data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    data = widerface.transform(data, 100, crop_size, image_size, 0.5)
-    for sample in data:
-        image = image_crop(Image.open(sample["image"]), sample["crop"])
-        boxes = np.array(sample["boxes"])
-        print("image: " + sample["image"])
-        print("croped boxes: " + str(boxes))
-        if sample["resize"]:
-            image, boxes = image_resize(image, image_size, boxes)
-            print("resized boxes: " + str(boxes))
-        if sample["flip"]:
-            image, boxes = image_flip(image, boxes)
-            print("fliped boxes: " + str(boxes))
-        w, h = image.size
-        # print("before encode: boxes=%s" % str(boxes))
-        boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
-        features = encode(boxes)
-        boxes=decode(features)
-        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
-        # print("after decode: boxes=%s" % str(boxes))
-        image_draw_boxes(image, boxes, color=(0,255,0))
-        plt.imshow(image)
-        plt.show()
-
 def precision(y_true, y_pred):
     c = K.softmax(y_pred[:,:,:2])
     P = K.cast(c[:,:,0] > 0.5, dtype='float32')
@@ -230,19 +192,6 @@ def build_modle():
     x4 = layers.Conv2D(3*6, 3, padding="valid")(x4)
     x4 = layers.Reshape((3*1*1, 6))(x4)
     model = models.Model(inputs=base.input, outputs=layers.Concatenate(axis=1)([x1,x2,x3,x4]))
-    # TODO: try Adagrad or other optimizers
-    model.compile(optimizer=optimizers.SGD(lr=0.001, momentum=0.9, decay=0.00005), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
-    model.summary()
-    return model
-
-def load_modle(model_path):
-    model = models.load_model(model_path, custom_objects={
-        "detection_loss": detection_loss, 
-        "confidence_loss": confidence_loss, 
-        "localization_loss": localization_loss,
-        "precision": precision,
-        "recall": recall},
-        compile=True)
     model.summary()
     return model
 
@@ -280,32 +229,108 @@ class DataGenerator(utils.Sequence):
             batch_y[i-start_index] = encode(boxes)
         return batch_x, batch_y
 
-def train_model(model, save_path=None):
+def transform(data, num_sample, crop_size, output_size, resize_rate=0.5, flip_rate=0.5):
+    result = []
+    index = int(np.random.rand()*len(data))
+    while (len(result) < num_sample):
+        index = index+1 if index < len(data)-1 else 0
+        sample = data[index]
+        image = sample["image"]
+        iw, ih = Image.open(image).size
+        for i in range(11):
+            resize = True if np.random.rand() < resize_rate else False
+            if resize:
+                cw, ch = crop_size
+            else:
+                cw, ch = output_size
+            if iw < cw  or ih < ch:
+                continue
+            x = int((iw - cw)*np.random.rand())
+            y = int((ih - ch)*np.random.rand())
+            candidates = [b for b in sample["boxes"] if x < b[0]+b[2]/2 and b[0]+b[2]/2 < x+cw and y < b[1]+b[3]/2 and b[1]+b[3]/2 < y+ch]
+            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in candidates if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
+            if len(candidates) == 0 or len(candidates) != len(boxes):
+                continue
+            flip = True if np.random.rand() < flip_rate else False
+            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize, "flip": flip})
+            if len(result) % 100 == 0:
+                print("croped %d samples" % len(result))
+            break
+    return result
+
+def train_model(dataset_dir, model_path):
     crop_size = (240, 180)
     image_size = (160, 160)
     resize_rate = 1.0
     sample_num = 32000
-    batch_size = 64
+    batch_size = 256
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
-    data = widerface.load_data()
+    if Path(model_path).is_file():
+        model = models.load_model(model_path, compile=False)
+    else:
+        model = build_modle()
+        Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+    # NOTES: model path is like <prefix>_<epoch>.h5
+    pos = model_path.rfind('_')
+    model_prefix = model_path[:pos]
+    offset = int(model_path[pos+1:-3])
+    data = widerface.load_data(dataset_dir)
     data = widerface.select(data[0] + data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    data = widerface.transform(data, sample_num, crop_size, image_size, resize_rate)
-    generator = DataGenerator(data, image_size, feture_shape, batch_size)
+    data = transform(data, sample_num, crop_size, image_size, resize_rate)
+    train_generator = DataGenerator(data, image_size, feture_shape, batch_size)
+    model.compile(optimizer=optimizers.SGD(lr=0.001, momentum=0.9, decay=0.00005), loss=detection_loss, metrics=[confidence_loss, localization_loss, precision, recall])
     for i in range(1, 1111):
-        model.fit_generator(generator, epochs=10, workers=2, use_multiprocessing=True, shuffle=True)
-        if save_path != None:
-            p = save_path.rfind('_')
-            n = int(save_path[p+1: len(save_path)-3])
-            print("save model for epochs " + str(n + i*10))
-            model.save(save_path[:p+1] + str(n + i*10) + ".h5")
+        epochs = 10
+        model.fit(train_generator, epochs=epochs, workers=4, use_multiprocessing=True)
+        offset += epochs
+        model_file = f"{model_prefix}_{offset}.h5"
+        model.save(model_file)
+        print(f"{model_file} saved")
 
-def test_model(model):
+def image_draw_boxes(image, boxes, color, width=2):
+    d = ImageDraw.Draw(image)
+    for box in boxes:
+        [x, y, w, h] = box[:4]
+        d.rectangle([x,y,x+w,y+h], outline=color, width=width)
+        d.point([(x+w/2-0.5,y+h/2-0.5), (x+w/2+0.5,y+h/2-0.5), (x+w/2-0.5,y+h/2+0.5), (x+w/2+0.5,y+h/2+0.5)], fill=color)
+
+def test_codec():
+    crop_size = (240, 180 )
+    image_size = (160, 160)
+    data = widerface.load_data()
+    data = widerface.select(data[0], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
+    data = transform(data, 100, crop_size, image_size, 0.5)
+    for sample in data:
+        image = image_crop(Image.open(sample["image"]), sample["crop"])
+        boxes = np.array(sample["boxes"])
+        print("image: " + sample["image"])
+        print("croped boxes: " + str(boxes))
+        if sample["resize"]:
+            image, boxes = image_resize(image, image_size, boxes)
+            print("resized boxes: " + str(boxes))
+        if sample["flip"]:
+            image, boxes = image_flip(image, boxes)
+            print("fliped boxes: " + str(boxes))
+        w, h = image.size
+        # print("before encode: boxes=%s" % str(boxes))
+        boxes = [[(b[0]+0.5*b[2])/w, (b[1]+0.5*b[3])/h, b[2]/w, b[3]/h] for b in boxes]
+        features = encode(boxes)
+        boxes=decode(features)
+        boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h] for b in boxes]
+        # print("after decode: boxes=%s" % str(boxes))
+        image_draw_boxes(image, boxes, (0,255,0))
+        plt.imshow(image)
+        plt.show()
+
+def test_model(model_path):
     crop_size = (240, 180)
     image_size = (160, 160)
     feture_shape = (3*(10*10+5*5+3*3+1), 6)
+    model = models.load_model(model_path, compile=False)
+    model.summary()
     data = widerface.load_data()
     data = widerface.select(data[1], blur="0", illumination="0", occlusion="0", pose="0", invalid="0", min_size=32)
-    data = widerface.transform(data, 9, crop_size, image_size, 0.8)
+    data = transform(data, 9, crop_size, image_size, 0.8)
     generator = DataGenerator(data, image_size, feture_shape, 9)
     batch_x, batch_y = generator[0]
     y_pred = model.predict(batch_x)
@@ -332,19 +357,16 @@ def test_model(model):
             print("Sample %d, predicted_box=(%d,%d,%d,%d) confidence: %f" % (i, x, y, w, h, c))
             rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
-    plt.show()
+        plt.show()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("train", "test"):
-        print("Usage: %s <train|test>  <h5_file> where: <h5_file> = <path_prefix>_<epochs>.h5" % sys.argv[0])
+    if len(sys.argv) < 3 or sys.argv[1] not in ("train", "test"):
+        print(f"Usage: {sys.argv[0]} train <dataset-dir> <xxx_epoch.h5>")
+        print(f"   Or: {sys.argv[0]} test <xxx_epoch.h5>")
         sys.exit(-1)
-    action = sys.argv[1]
-    model_path = sys.argv[2]
-    if action == "train" :
-        model = build_modle() if not os.path.exists(model_path) else load_modle(model_path)
-        train_model(model, model_path)
-    elif os.path.exists(model_path):
-        model = load_modle(model_path)
-        test_model(model)
+    if sys.argv[1] == "train" and len(sys.argv) > 3:
+        train_model(sys.argv[2], sys.argv[3])
+    elif sys.argv[1] == "test" and  Path(sys.argv[2]).is_file():
+        test_model(sys.argv[2])
     else:
-        print(model_path + "does not exist")
+        print("Invalid input arguments!")

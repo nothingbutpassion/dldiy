@@ -5,8 +5,8 @@ import dlib
 import cv2
 import numpy as np
 import tensorflow as tf
+from pathlib import Path
 
-# model params
 _scales  = [0.3, 0.5, 0.7, 0.9]
 _sizes   = [[10,10], [5,5], [3,3], [1,1]]
 _aspects = [0.5, 0.8, 1.0]
@@ -71,7 +71,10 @@ def nms(boxes, threshold=0.01):
 
 def make_square_box(box):
     x, y, w, h = box[:4]
-    s = np.sqrt(w*h)
+    s = np.sqrt(w * h)
+    # sizes = [80 * 1.2 ** i for i in range(10)]
+    # diffs = [abs(np.sqrt(w*h) - s) for s in sizes]
+    # s = sizes[np.argmin(diffs)]
     x += (w - s)/2
     y += (h - s)
     w = s
@@ -109,7 +112,8 @@ class Detector(object):
 def test_detection(tflite_file):
     detector = Detector(tflite_file)
     dlib_detector = dlib.get_frontal_face_detector()
-    dlib_predictor = dlib.shape_predictor(os.path.dirname(os.path.abspath(__file__)) + "/models/shape_predictor_68_face_landmarks.dat")
+    model_file = Path(__file__).absolute().parents[1].as_posix() + "/models/shape_predictor_68_face_landmarks.dat"
+    dlib_predictor = dlib.shape_predictor(model_file)
     c = cv2.VideoCapture(0)
     while True:
         ok, img = c.read()
@@ -147,12 +151,12 @@ def usage():
 
 def parse_arguments():
     try:
-	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input="])
+        opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input="])
     except getopt.GetoptError as err:
         print(err)
         usage()
     model_version = "1"
-    tflite_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.tflite" 
+    tflite_file = Path(__file__).absolute().parents[1].as_posix() + "/models/face_model_v1_2100.tflite"
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()

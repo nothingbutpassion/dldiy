@@ -5,8 +5,9 @@ import dlib
 import numpy as np
 import tensorflow as tf
 from xml.etree import ElementTree as ET
+from pathlib import Path
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(Path(__file__).absolute().parents[1].as_posix())
 import datasets.w300 as w300
 
 g_scales = [0.3, 0.5, 0.7, 0.9]
@@ -219,23 +220,19 @@ def test_landmarks_predictor(detecor_model_file, landmarks_model_file):
             break
 
 if __name__ == "__main__":
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    detector_model_file = os.path.join(this_dir, "models", "face_model_v1_2100.tflite") 
-    landmarks_trainning_file = os.path.join(this_dir, "models", "face_model_v1_2100_w300_tranning_landmarks.xml")
-    landmarks_model_file = os.path.join(this_dir, "models", "face_model_v1_2100_w300_landmarks.dat")
-
+    project_dir = Path(__file__).absolute().parents[1].as_posix()
+    detector_model_file = os.path.join(project_dir, "models", "face_model_v1_2100.tflite")
+    landmark_trainning_file = os.path.join(project_dir, "models", "face_model_v1_2100_w300_tranning_landmarks.xml")
+    landmark_model_file = os.path.join(project_dir, "models", "face_model_v1_2100_w300_landmarks.dat")
     # generate landmarks trainning file
     detector = Detector(detector_model_file)
     data = w300.load_data()
     data = generate_landmarks_data(data[0]+data[1], detector)
-    generate_landmarks_trainning_file(data, landmarks_trainning_file)
-
+    generate_landmarks_trainning_file(data, landmark_trainning_file)
     # train landmarks model
-    train_landmarks(landmarks_trainning_file, landmarks_model_file)
-
-    # test landmarks model
-    if os.name == "nt":
-        test_landmarks_predictor(detector_model_file, landmarks_model_file)
+    train_landmarks(landmark_trainning_file, landmark_model_file)
+    # test trained model
+    test_landmarks_predictor(detector_model_file, landmark_trainning_file)
 
 
 

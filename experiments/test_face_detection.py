@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
+from pathlib import Path
 
 g_scales = [0.3, 0.5, 0.7, 0.9]
 g_sizes = [[10,10], [5,5], [3,3], [1,1]]
@@ -16,7 +17,7 @@ g_aspects = [0.5, 0.8, 1.0]
 # NOTES:
 # This function is tested on TF 2.0
 # see https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#from_keras_model
-def keras_to_tflite_v2(keras_file, tflite_file):
+def keras_to_tflite(keras_file, tflite_file):
     model = keras.models.load_model(keras_file, compile=False)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     tflite_model = converter.convert()
@@ -110,7 +111,6 @@ class Detector(object):
         boxes = [[(b[0]-0.5*b[2])*w, (b[1]-0.5*b[3])*h, b[2]*w, b[3]*h, b[4]] for b in boxes]
         return boxes
 
-
 def test_detection(tflite_file):
     detector = Detector(tflite_file)
     c = cv2.VideoCapture(0)
@@ -129,12 +129,12 @@ def test_detection(tflite_file):
 
 def parse_arguments():
     try:
-	    opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input=", "version="])
+        opts, _ = getopt.getopt(sys.argv[1:], "hi:v:", ["help", "input=", "version="])
     except getopt.GetoptError as err:
         print(err)
         sys.exit(-1)
     model_version = "1"    
-    model_path = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100.h5"
+    model_path = (Path(__file__).parent.parent/"models/face_model_v1_2100.tflite").as_posix()
     for o, a in opts:
         if o in ("-h", "--help"):
             print("Usage: <this-app> -m <model-version> -i <keralh5-file|tflite-file>")
@@ -154,5 +154,5 @@ if __name__ == "__main__":
     tflite_file = model_path
     if model_path[-3:] == ".h5":
         tflite_file = model_path[-3:] + ".tflite"
-        keras_to_tflite_v2(model_path, tflite_file)
+        keras_to_tflite(model_path, tflite_file)
     test_detection(tflite_file)

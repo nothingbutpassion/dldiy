@@ -1,11 +1,10 @@
 import os
-import sys
 import cv2
 import pickle
 import time
 import numpy as np
 import xml.etree.ElementTree as ET
-
+from pathlib import Path
 
 class progress_bar(object):
     def __init__(self, target):
@@ -391,9 +390,9 @@ def test_landmarks_model(trainning_file, model_file):
                 break
 
 if __name__ == "__main__":
-    trainning_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100_w300_tranning_landmarks.xml"
-    model_file = os.path.dirname(os.path.abspath(__file__)) + "/models/face_model_v1_2100_w300_landmarks.model"
-    train_model(trainning_file, model_file)
-    if os.name == "nt":
-        test_landmarks_model(trainning_file, model_file)
+    project_dir = Path(__file__).absolute().parents[1].as_posix()
+    trainning_file = project_dir + "/models/face_model_v1_2100_w300_tranning_landmarks.xml"
+    out_model_file = project_dir + "/models/face_model_v1_2100_w300_landmarks.model"
+    train_model(trainning_file, out_model_file)
+    test_landmarks_model(trainning_file, out_model_file)
 

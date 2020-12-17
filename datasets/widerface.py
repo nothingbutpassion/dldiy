@@ -1,20 +1,14 @@
-# coding: utf-8
 import os
 import zipfile
 import pickle
-import numpy as np
-import PIL.Image as Image
-
-dataset_dir = os.path.dirname(os.path.abspath(__file__)) + "/widerface"
-save_file = dataset_dir + "/winderface.pkl"
+from pathlib import Path
 
 def _extract_files(root):
     for name in ["wider_face_split", "WIDER_train", "WIDER_val", "WIDER_test"]:
-        if not os.path.exists(root + "/" + name):
-            zip_name = root + "/" + name + ".zip"
-            assert(os.path.exists(zip_name))
-            with zipfile.ZipFile(zip_name) as f:
-                print("extracting %s ..." % zip_name)
+        if not (Path(root)/name).is_dir():
+            zip_file = root + "/" + name + ".zip"
+            with zipfile.ZipFile(zip_file) as f:
+                print("extracting %s ..." % zip_file)
                 f.extractall(root)
                 print("saved as %s" % root + "/" + name)
 
@@ -45,16 +39,13 @@ def _parse_filelist(root, image_dir, list_file):
             data.append(path)
     return data
 
-def init_data(root):
+def _init_data(root):
     _extract_files(root)
     train_data = _parse_bbx(root, "WIDER_train/images","/wider_face_split/wider_face_train_bbx_gt.txt")
     val_data = _parse_bbx(root, "WIDER_val/images", "/wider_face_split/wider_face_val_bbx_gt.txt")
     test_data = _parse_filelist(root, "WIDER_test/images", "wider_face_split/wider_face_test_filelist.txt")
-    dataset = (train_data, val_data, test_data)
-    print("creating pickle file ...")
-    with open(save_file, "wb") as f:
-        pickle.dump(dataset, f, -1)
-    print("saved as " + save_file) 
+    return (train_data, val_data, test_data)
+
 
 def select(data, blur=None, expression=None, illumination=None, invalid=None, occlusion=None, pose=None, min_size=12):
     """Attached the mappings between attribute names and label values.
@@ -115,43 +106,21 @@ def select(data, blur=None, expression=None, illumination=None, invalid=None, oc
             result.append({"image": image, "boxes": bboxes})
     return result
 
-def transform(data, num_sample, crop_size, output_size, resize_rate=0.5, flip_rate=0.5):
-    result = []
-    index = int(np.random.rand()*len(data))
-    while (len(result) < num_sample):
-        index = index+1 if index < len(data)-1 else 0 
-        sample = data[index]
-        image = sample["image"]
-        iw, ih = Image.open(image).size
-        for i in range(11):
-            resize = True if np.random.rand() < resize_rate else False
-            if resize:
-                cw, ch = crop_size
-            else:
-                cw, ch = output_size
-            if iw < cw  or ih < ch:
-                continue
-            x = int((iw - cw)*np.random.rand())
-            y = int((ih - ch)*np.random.rand())
-            candidates = [b for b in sample["boxes"] if x < b[0]+b[2]/2 and b[0]+b[2]/2 < x+cw and y < b[1]+b[3]/2 and b[1]+b[3]/2 < y+ch]
-            boxes = [[b[0]-x, b[1]-y, b[2], b[3]] for b in candidates if b[0] > x and b[1] > y and b[0]+b[2] < x+cw and b[1]+b[3] < y+ch]
-            if len(candidates) == 0 or len(candidates) != len(boxes):
-                continue
-            flip = True if np.random.rand() < flip_rate else False
-            result.append({"image": image, "crop": [x, y, x+cw, y+ch], "boxes": boxes, "resize": resize, "flip": flip})
-            if len(result) % 100 == 0:
-                print("croped %d samples" % len(result))
-            break
-    return result
-
-
-def load_data(root=dataset_dir):
+def load_data(dataset_dir=None):
     """WIDERFace: http://mmlab.ie.cuhk.edu.hk/projects/WIDERFace/
     """
-    assert(os.path.exists(root))
-    if not os.path.exists(save_file):
-        init_data(root)
-    with open(save_file, "rb") as f:
-        dataset = pickle.load(f)
+    root = (Path(__file__).parent/"widerface").as_posix()
+    if dataset_dir is not None:
+        root = Path(dataset_dir).as_posix()
+    assert Path(root).is_dir()
+    pickle_file = f"{root}/winderface.pkl"
+    if not Path(pickle_file).is_file():
+        dataset = _init_data(root)
+        with open(pickle_file, "wb") as f:
+            pickle.dump(dataset, f, -1)
+            print("saved as {save_file}")
+    else:
+        with open(pickle_file, "rb") as f:
+            dataset = pickle.load(f)
     return dataset
 

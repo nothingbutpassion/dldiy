@@ -22,10 +22,8 @@ def _convert(data):
             # we only use first contour's bounding box
             r = cv2.boundingRect(contours[0])
             rects.append([r[0], r[1], r[2], r[3]])
-            # cv2.rectangle(img, (r[0],r[1]), (r[0]+r[2], r[1]+r[3]), (255, 0, 0), 2)
-        result.append({"image": sample["image"], "boxes":rects})
+        result.append({"image": sample["image"], "boxes": rects})
     return result
-        
 
 def _parse(fddb_folds, original_pics):
     """
@@ -45,16 +43,16 @@ def _parse(fddb_folds, original_pics):
                 box = lines[k].strip().split()
                 box = [float(b) for b in box]
                 boxes.append(box)
-            assert(os.path.exists(image_file))
-            assert(len(boxes) > 0)
+            assert os.path.exists(image_file)
+            assert len(boxes) > 0
             result.append({"image":image_file, "boxes":boxes})
             j = j+2+num_box
     return result
             
-def init_data(root):
+def _init_data(root):
     fddb_folds = root + "/FDDB-folds"
     original_pics = root + "/originalPics"
-    assert(os.path.exists(fddb_folds) and os.path.exists(original_pics))
+    assert (os.path.exists(fddb_folds) and os.path.exists(original_pics))
     dataset = _parse(fddb_folds, original_pics)
     print("creating ellipse pickle file ...")
     with open(ellipse_file, "wb") as f:
@@ -65,20 +63,19 @@ def init_data(root):
     with open(rectangle_file, "wb") as f:
         pickle.dump(dataset, f, -1)
     print("saved as " + rectangle_file)
-    
 
 def load_data(root=dataset_dir, rectangle=True):
     """
     FDDB: Face Detection Data Set and Benchmark
     see http://vis-www.cs.umass.edu/fddb/index.html
     """
-    assert(os.path.exists(root))
+    assert os.path.exists(root)
     if rectangle:
         save_file = rectangle_file
     else:
         save_file = ellipse_file
     if not os.path.exists(save_file):
-        init_data(root)
+        _init_data(root)
     with open(save_file, "rb") as f:
         dataset = pickle.load(f)
     return dataset
