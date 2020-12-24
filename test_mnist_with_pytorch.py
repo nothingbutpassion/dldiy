@@ -17,7 +17,7 @@ class Net(nn.Module):
         x = self.conv1(x) + self.conv2(x*x)
         x = F.max_pool2d(x, 2)
         x = x.view(-1, 14*14*4)
-        x = F.relu(self.fc(x))
+        x = self.fc(x)
         return x
 
 def accuracy(y_pred, y_true):

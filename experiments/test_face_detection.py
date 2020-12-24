@@ -114,15 +114,20 @@ class Detector(object):
 def test_detection(tflite_file):
     detector = Detector(tflite_file)
     c = cv2.VideoCapture(0)
+    crop_sizes = [(208, 160), (192, 160), (176, 160), (160, 176), (160, 192), (160, 208)]
+    crop_size = crop_sizes[np.random.randint(6)]
     while True:
         ok, img = c.read()
         if not ok:
             break
+        img_size = (img.shape[1], img.shape[0])
+        img = cv2.resize(img, crop_size)
         boxes = detector.detect(img)
         for box in boxes:
             (x, y, w, h, p) = box
             print("detected box: %s, confidence: %f " % (str(box), p))
-            cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0,255,0), 2)
+            cv2.rectangle(img, (int(x),int(y)), (int(x+w),int(y+h)), (0,255,0), 1)
+        img = cv2.resize(img, img_size)
         cv2.imshow("Image", img)
         if cv2.waitKey(20) == ord('q'):
             break
@@ -137,7 +142,7 @@ def parse_arguments():
     model_path = (Path(__file__).parent.parent/"models/face_model_v1_2100.tflite").as_posix()
     for o, a in opts:
         if o in ("-h", "--help"):
-            print("Usage: <this-app> -m <model-version> -i <keralh5-file|tflite-file>")
+            print("Usage: <this-app> -v <model-version> -i <h5-file|tflite-file>")
             sys.exit(0)
         elif o in ("-v", "--version"):
             model_version = a
@@ -146,6 +151,7 @@ def parse_arguments():
     return model_path, model_version
 
 if __name__ == "__main__":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     model_path, model_version = parse_arguments()
     print("model file: " + model_path)
     print("model version: " + model_version)
@@ -153,6 +159,6 @@ if __name__ == "__main__":
         g_aspects = [0.5, 1.0, 1.5]
     tflite_file = model_path
     if model_path[-3:] == ".h5":
-        tflite_file = model_path[-3:] + ".tflite"
+        tflite_file = model_path[:-3] + ".tflite"
         keras_to_tflite(model_path, tflite_file)
     test_detection(tflite_file)
