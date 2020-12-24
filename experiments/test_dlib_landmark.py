@@ -9,7 +9,7 @@ from pathlib import Path
 
 _scales  = [0.3, 0.5, 0.7, 0.9]
 _sizes   = [[10,10], [5,5], [3,3], [1,1]]
-_aspects = [0.5, 0.8, 1.0]
+_aspects = [0.5, 1.0, 1.5]
 
 def get_dbox(feature_index, scales=_scales, sizes=_sizes, aspects=_aspects):
     aspect_num = len(aspects)
@@ -168,11 +168,5 @@ def parse_arguments():
 
 if __name__ == "__main__":
     tflite_file, model_version = parse_arguments()
-    print("tflite model file: " + tflite_file)
-    print("face model version: " + model_version)
-    # NOTES: 
-    # For v1 model, _aspects = [0.5, 0.8, 1.0]
-    # For v2 model, _aspects = [0.5, 1.0, 1.5]
-    if model_version == "2":
-        _aspects = [0.5, 1.0, 1.5]
+    print(f"used detector model: {tflite_file} version: {model_version}")
     test_detection(tflite_file)

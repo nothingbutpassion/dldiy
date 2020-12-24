@@ -1,4 +1,5 @@
 import os
+import sys
 import cv2
 import pickle
 import time
@@ -390,9 +391,10 @@ def test_landmarks_model(trainning_file, model_file):
                 break
 
 if __name__ == "__main__":
-    project_dir = Path(__file__).absolute().parents[1].as_posix()
-    trainning_file = project_dir + "/models/face_model_v1_2100_w300_tranning_landmarks.xml"
-    out_model_file = project_dir + "/models/face_model_v1_2100_w300_landmarks.model"
-    train_model(trainning_file, out_model_file)
-    test_landmarks_model(trainning_file, out_model_file)
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv} <dlib-style-xml> <output-model-path>")
+        sys.exit(-1)
+    training_xml_file, out_model_file = sys.argv[1:3]
+    train_model(training_xml_file, out_model_file)
+    test_landmarks_model(training_xml_file, out_model_file)
 

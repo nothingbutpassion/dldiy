@@ -220,22 +220,19 @@ def test_landmarks_predictor(detecor_model_file, landmarks_model_file):
             break
 
 if __name__ == "__main__":
-    project_dir = Path(__file__).absolute().parents[1].as_posix()
-    detector_model_file = os.path.join(project_dir, "models", "face_model_v1_2100.tflite")
-    landmark_trainning_file = os.path.join(project_dir, "models", "face_model_v1_2100_w300_tranning_landmarks.xml")
-    landmark_model_file = os.path.join(project_dir, "models", "face_model_v1_2100_w300_landmarks.dat")
-    # generate landmarks trainning file
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv} <detector-model-path> <dlib-style-xml> <output-model-path>")
+        sys.exit(-1)
+    detector_model_file, landmark_xml_file, landmark_model_file = sys.argv[1:4]
+    # generate landmarks training xml file
     detector = Detector(detector_model_file)
     data = w300.load_data()
     data = generate_landmarks_data(data[0]+data[1], detector)
-    generate_landmarks_trainning_file(data, landmark_trainning_file)
+    generate_landmarks_trainning_file(data, landmark_xml_file)
     # train landmarks model
-    train_landmarks(landmark_trainning_file, landmark_model_file)
+    train_landmarks(landmark_xml_file, landmark_model_file)
     # test trained model
-    test_landmarks_predictor(detector_model_file, landmark_trainning_file)
-
-
-
+    test_landmarks_predictor(detector_model_file, landmark_xml_file)
 
 
 

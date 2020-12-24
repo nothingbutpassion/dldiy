@@ -7,16 +7,10 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from pathlib import Path
 
-g_scales = [0.3, 0.5, 0.7, 0.9]
-g_sizes = [[10,10], [5,5], [3,3], [1,1]]
-# NOTES: 
-# v1 model: g_aspects = [0.5, 0.8, 1.0]
-# v2 model: g_aspects = [0.5, 1.0, 1.5]
+g_scales  = [0.3, 0.5, 0.7, 0.9]
+g_sizes   = [[10,10], [5,5], [3,3], [1,1]]
 g_aspects = [0.5, 0.8, 1.0]
 
-# NOTES:
-# This function is tested on TF 2.0
-# see https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#from_keras_model
 def keras_to_tflite(keras_file, tflite_file):
     model = keras.models.load_model(keras_file, compile=False)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
@@ -96,7 +90,6 @@ class Detector(object):
         self.output_index = output_details[0]['index']
         print("input shape: %s, index=%d" % (str(self.input_shape), self.input_index))
         print("output shape: %s, index=%d" % (str(self.output_shape), self.output_index))
-    
     def detect(self, image):
         h, w = image.shape[:2]
         image = cv2.resize(image, (self.input_shape[1], self.input_shape[2]))
@@ -138,16 +131,17 @@ def parse_arguments():
     except getopt.GetoptError as err:
         print(err)
         sys.exit(-1)
-    model_version = "1"    
-    model_path = (Path(__file__).parent.parent/"models/face_model_v1_2100.tflite").as_posix()
+    model_version = "1"
+    model_path = None
     for o, a in opts:
         if o in ("-h", "--help"):
-            print("Usage: <this-app> -v <model-version> -i <h5-file|tflite-file>")
+            print("Usage: <this-app> -i <h5-file|tflite-file> -v <model-version>")
             sys.exit(0)
         elif o in ("-v", "--version"):
             model_version = a
         elif o in ("-i", "--input"):
             model_path = a
+    assert Path(model_path).is_file()
     return model_path, model_version
 
 if __name__ == "__main__":
@@ -155,10 +149,9 @@ if __name__ == "__main__":
     model_path, model_version = parse_arguments()
     print("model file: " + model_path)
     print("model version: " + model_version)
-    if model_version == "2":
-        g_aspects = [0.5, 1.0, 1.5]
-    tflite_file = model_path
     if model_path[-3:] == ".h5":
         tflite_file = model_path[:-3] + ".tflite"
         keras_to_tflite(model_path, tflite_file)
+    else:
+        tflite_file = model_path
     test_detection(tflite_file)
