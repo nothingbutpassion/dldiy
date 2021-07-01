@@ -1,3 +1,4 @@
+import cv2
 import pickle
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -20,7 +21,7 @@ def _parse_xml(xml_file):
     tree = ET.parse(xml_file)
     dataset = tree.getroot()
     images = dataset.find("images")
-    result = {}
+    result = []
     for image in images:
         file = (Path(xml_file).parent/image.attrib["file"]).absolute().as_posix()
         boxes = []
@@ -29,7 +30,7 @@ def _parse_xml(xml_file):
             box = [int(box.attrib["left"]), int(box.attrib["top"]), int(box.attrib["width"]), int(box.attrib["height"]), ignore]
             boxes.append(box)
         if len(boxes) > 0:
-            result[file] = boxes
+            result += [(file, boxes)]
     return result
 
 def _init_data(dataset_dir):
@@ -51,7 +52,7 @@ def load_data(dataset_dir):
             pickle.dump(data, f)
     return data
 
-def show_stat_info(data):
+def show_statistics_info(data):
     total_boxes = []
     ignore = []
     normal = []
@@ -84,7 +85,7 @@ if __name__ == "__main__":
         print(f"Usage {sys.argv[0]} <dataset-dir>")
         sys.exit(-1)
     data = load_data(sys.argv[1])
-    show_stat_info(data)
+    show_statistics_info(data)
     for f, boxes in data.items():
         img = cv2.imread(f)
         print(f"{f}: {img.shape}")

@@ -3,11 +3,7 @@ import os
 import gzip
 import pickle
 import numpy as np
-
-try:
-    from urllib.request import urlopen
-except ImportError:
-    from urllib2 import urlopen
+from urllib.request import urlopen
 
 urls = {
     "train_image": "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz",
