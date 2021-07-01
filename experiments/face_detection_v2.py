@@ -101,8 +101,7 @@ def encode_box(abox, gbox):
     gx, gy, gw, gh = gbox
     rows, cols = _grids[l]
     gx, gy = gx * cols, gy * rows
-    if np.floor(gy) != i or np.floor(gx) != j:
-        print(f"invalid gbox: {gbox}, abox: {abox}")
+    assert np.floor(gy) == i and np.floor(gx) == j, print(f"invalid gbox: {gbox}, abox: {abox}")
     return [1, gx - j, gy - i, np.log(gw/w), np.log(gh/h)]
 
 def matched_cells(gbox):
@@ -119,11 +118,9 @@ def encode(aboxes, gboxes):
     # for each ground-truth box find the anchor-box with max iou
     for gb in gboxes:
         aids = []
-        for rows, cols in _grids:
-            gx, gy, gw, gh = gb
-            gx, gy = cols*gx, rows*gy
-            gj, gi = np.floor(gx), np.floor(gy)
-            aids += [i for i, ab in enumerate(aboxes) if ab[1] == gi and ab[2] == gj]
+        for l, (rows, cols) in enumerate(_grids):
+            gj, gi = np.floor(cols*gb[0]), np.floor(rows*gb[1])
+            aids += [i for i, ab in enumerate(aboxes) if ab[0] == l and ab[1] == gi and ab[2] == gj]
         ious = [iou(gb, aboxes[i][4:]) for i in aids]
         if len(ious) > 0:
             max_idx = aids[np.argmax(ious)]
@@ -369,7 +366,7 @@ def train(data_dir, model_path):
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.00005)
     callback = Callback(prefix, offset)
     fit(model, train_dl, val_dl, loss_func=detect_loss, optimizer=optimizer,
-        epochs=1000, metrics=[conf_loss, coord_loss], callback=callback)
+        epochs=10000, metrics=[conf_loss, coord_loss], callback=callback)
 
 def test_codec(data_dir):
     data = dfdd.load_data(data_dir)
